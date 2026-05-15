@@ -65,6 +65,12 @@ data/
 cache/
 .cache/
 
+# SQLite databases (local dev only)
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
 # IDE / editor
 .vscode/
 .idea/
