@@ -1,6 +1,18 @@
-"""Fundamentals: yfinance .info primary; Alpha Vantage OVERVIEW fallback. 24h TTL cache."""
+"""Fundamentals: Finnhub primary → yfinance → Alpha Vantage. 24h TTL cache.
 
-from typing import TypedDict
+Finnhub gives the cleanest data (Refinitiv-backed) on a generous free tier
+(60 req/min). yfinance is the no-key fallback. Alpha Vantage is last resort
+because its 25 calls/day quota is tight.
+"""
+
+import time
+from datetime import UTC, date, datetime, timedelta
+from typing import Any, TypedDict
+
+import httpx
+import yfinance as yf
+
+from ..config import settings
 
 
 class Fundamentals(TypedDict, total=False):
@@ -12,7 +24,194 @@ class Fundamentals(TypedDict, total=False):
     profit_margins: float | None
     revenue_growth: float | None
     earnings_date: str | None
+    source: str  # "finnhub" | "yfinance" | "alphavantage"
+
+
+_TTL_SECONDS = 24 * 60 * 60
+_cache: dict[str, tuple[float, Fundamentals]] = {}
+
+
+def _to_float(x: Any) -> float | None:
+    if x is None or x == "None" or x == "":
+        return None
+    try:
+        f = float(x)
+    except (TypeError, ValueError):
+        return None
+    return None if f != f else f  # NaN check
+
+
+def _from_finnhub(ticker: str) -> Fundamentals | None:
+    """Finnhub: cleanest free fundamentals source. Needs FINNHUB_API_KEY."""
+    if not settings.finnhub_api_key:
+        return None
+    base = "https://finnhub.io/api/v1"
+    token = settings.finnhub_api_key
+    today = date.today()
+    horizon = today + timedelta(days=120)
+
+    try:
+        with httpx.Client(timeout=10.0) as client:
+            profile = client.get(
+                f"{base}/stock/profile2",
+                params={"symbol": ticker, "token": token},
+            ).json()
+            metric = client.get(
+                f"{base}/stock/metric",
+                params={"symbol": ticker, "metric": "all", "token": token},
+            ).json()
+            cal = client.get(
+                f"{base}/calendar/earnings",
+                params={
+                    "symbol": ticker,
+                    "from": today.isoformat(),
+                    "to": horizon.isoformat(),
+                    "token": token,
+                },
+            ).json()
+    except Exception:
+        return None
+
+    if not profile or not profile.get("marketCapitalization"):
+        return None
+
+    m = (metric or {}).get("metric", {}) or {}
+    earnings_list = (cal or {}).get("earningsCalendar") or []
+    earnings_date = earnings_list[0].get("date") if earnings_list else None
+
+    # Finnhub's marketCapitalization is in **millions** of USD.
+    mcap_m = _to_float(profile.get("marketCapitalization"))
+    market_cap = (mcap_m or 0.0) * 1_000_000
+
+    # Finnhub returns margins/growth as percents (55.6); yfinance/AV use fractions (0.556).
+    # Normalize to fractions so downstream consumers don't have to know the source.
+    margin_pct = _to_float(m.get("netProfitMarginTTM"))
+    growth_pct = _to_float(m.get("revenueGrowthQuarterlyYoy")) or _to_float(
+        m.get("revenueGrowthTTMYoy")
+    )
+
+    return {
+        "sector": "",  # Finnhub doesn't return a separate sector; only finnhubIndustry.
+        "industry": profile.get("finnhubIndustry") or "",
+        "market_cap": market_cap,
+        "trailing_pe": _to_float(m.get("peTTM")) or _to_float(m.get("peBasicExclExtraTTM")),
+        # Finnhub's free tier exposes peNormalizedAnnual but not analyst-estimate-based
+        # forward P/E — using it would equal trailing and mislead the agent. Leave None.
+        "forward_pe": None,
+        "profit_margins": margin_pct / 100 if margin_pct is not None else None,
+        "revenue_growth": growth_pct / 100 if growth_pct is not None else None,
+        "earnings_date": earnings_date,
+        "source": "finnhub",
+    }
+
+
+def _from_yfinance(ticker: str) -> Fundamentals | None:
+    try:
+        info = yf.Ticker(ticker).info
+    except Exception:
+        return None
+    if not info or not info.get("marketCap"):
+        return None
+
+    earnings_ts = info.get("earningsTimestamp")
+    earnings_date: str | None = None
+    if earnings_ts:
+        try:
+            earnings_date = datetime.fromtimestamp(int(earnings_ts), tz=UTC).date().isoformat()
+        except (TypeError, ValueError, OSError):
+            pass
+
+    return {
+        "sector": info.get("sector") or "",
+        "industry": info.get("industry") or "",
+        "market_cap": _to_float(info.get("marketCap")) or 0.0,
+        "trailing_pe": _to_float(info.get("trailingPE")),
+        "forward_pe": _to_float(info.get("forwardPE")),
+        "profit_margins": _to_float(info.get("profitMargins")),
+        "revenue_growth": _to_float(info.get("revenueGrowth")),
+        "earnings_date": earnings_date,
+        "source": "yfinance",
+    }
+
+
+def _from_alphavantage(ticker: str) -> Fundamentals | None:
+    if not settings.alphavantage_api_key:
+        return None
+    url = "https://www.alphavantage.co/query"
+    params = {"function": "OVERVIEW", "symbol": ticker, "apikey": settings.alphavantage_api_key}
+    try:
+        response = httpx.get(url, params=params, timeout=10.0)
+        response.raise_for_status()
+        data = response.json()
+    except Exception:
+        return None
+    if not data or not data.get("MarketCapitalization"):
+        return None
+
+    return {
+        "sector": data.get("Sector") or "",
+        "industry": data.get("Industry") or "",
+        "market_cap": _to_float(data.get("MarketCapitalization")) or 0.0,
+        "trailing_pe": _to_float(data.get("TrailingPE")) or _to_float(data.get("PERatio")),
+        "forward_pe": _to_float(data.get("ForwardPE")),
+        "profit_margins": _to_float(data.get("ProfitMargin")),
+        "revenue_growth": _to_float(data.get("QuarterlyRevenueGrowthYOY")),
+        "earnings_date": None,
+        "source": "alphavantage",
+    }
+
+
+def _backfill_forward_pe(result: Fundamentals, ticker: str) -> Fundamentals:
+    """Best-effort forward P/E from yfinance's Refinitiv-licensed feed.
+
+    Finnhub's free tier doesn't expose analyst-estimate-based forward P/E
+    (it's gated behind their paid plan). yfinance scrapes Yahoo Finance,
+    which licenses the same Refinitiv consensus panel, so its `forwardPE`
+    field is the best free approximation. Called only when the primary
+    source didn't already provide one.
+    """
+    if result.get("forward_pe") is not None:
+        return result
+    try:
+        info = yf.Ticker(ticker).info or {}
+    except Exception:
+        return result
+    fp = _to_float(info.get("forwardPE"))
+    if fp is not None:
+        result["forward_pe"] = fp
+    return result
 
 
 def get_fundamentals(ticker: str) -> Fundamentals:
-    raise NotImplementedError
+    """Return company fundamentals for `ticker`, cached for 24h.
+
+    Source priority:
+      1. Finnhub (cleanest free data, 60 req/min, needs FINNHUB_API_KEY)
+      2. yfinance (no key, decent quality, sometimes stale)
+      3. Alpha Vantage (last resort: tight 25 calls/day, needs ALPHAVANTAGE_API_KEY)
+
+    After the primary fetch, forward_pe is backfilled from yfinance if missing —
+    Finnhub's free tier doesn't include real forward estimates.
+    """
+    key = ticker.upper()
+    now = time.time()
+    cached = _cache.get(key)
+    if cached and (now - cached[0]) < _TTL_SECONDS:
+        return cached[1]
+
+    result = _from_finnhub(ticker) or _from_yfinance(ticker) or _from_alphavantage(ticker)
+    if result is None:
+        raise ValueError(f"No fundamentals available for {ticker!r}")
+
+    result = _backfill_forward_pe(result, ticker)
+    _cache[key] = (now, result)
+    return result
+
+
+if __name__ == "__main__":
+    import sys
+
+    symbol = sys.argv[1] if len(sys.argv) > 1 else "NVDA"
+    snap = get_fundamentals(symbol)
+    for key, value in snap.items():
+        print(f"{key:18s} {value}")

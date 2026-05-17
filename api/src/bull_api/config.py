@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     anthropic_api_key: str
     alpaca_api_key: str = ""
     alpaca_api_secret: str = ""
+    finnhub_api_key: str = ""
     alphavantage_api_key: str = ""
 
     bull_primary_model: str = "claude-sonnet-4-6"
