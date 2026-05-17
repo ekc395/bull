@@ -8,11 +8,13 @@ Items are deduped by normalized title; the best-ranked publisher wins.
 """
 
 import time
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import TypedDict
 from urllib.parse import quote_plus
 
 import feedparser
+
+from ..time import trading_day
 import httpx
 import yfinance as yf
 
@@ -66,7 +68,7 @@ def _normalize_title(t: str) -> str:
 def _from_finnhub(ticker: str, days: int) -> list[NewsItem]:
     if not settings.finnhub_api_key:
         return []
-    today = date.today()
+    today = trading_day()
     from_date = today - timedelta(days=days)
     try:
         with httpx.Client(timeout=10.0) as client:

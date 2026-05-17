@@ -6,13 +6,14 @@ because its 25 calls/day quota is tight.
 """
 
 import time
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any, TypedDict
 
 import httpx
 import yfinance as yf
 
 from ..config import settings
+from ..time import trading_day
 
 
 class Fundamentals(TypedDict, total=False):
@@ -47,7 +48,7 @@ def _from_finnhub(ticker: str) -> Fundamentals | None:
         return None
     base = "https://finnhub.io/api/v1"
     token = settings.finnhub_api_key
-    today = date.today()
+    today = trading_day()
     horizon = today + timedelta(days=120)
 
     try:

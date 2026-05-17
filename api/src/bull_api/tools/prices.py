@@ -1,9 +1,11 @@
-"""yfinance OHLCV fetch with per-(ticker, date) in-memory cache."""
+"""yfinance OHLCV fetch with per-(ticker, trading-day) in-memory cache."""
 
 from datetime import date
 
 import pandas as pd
 import yfinance as yf
+
+from ..time import trading_day
 
 _cache: dict[tuple[str, int, date], pd.DataFrame] = {}
 
@@ -13,10 +15,10 @@ def get_price_history(ticker: str, lookback_days: int = 400) -> pd.DataFrame:
 
     Columns: Open, High, Low, Close, Volume (split/dividend adjusted).
     Index: tz-naive DatetimeIndex of trading days.
-    Cached per process by (ticker, lookback_days, today) — same ticker on the same
-    calendar day returns the cached frame without hitting yfinance.
+    Cached per process by (ticker, lookback_days, ET trading day) — same ticker
+    on the same trading session returns the cached frame without hitting yfinance.
     """
-    key = (ticker.upper(), lookback_days, date.today())
+    key = (ticker.upper(), lookback_days, trading_day())
     if key in _cache:
         return _cache[key]
 

@@ -3,10 +3,11 @@
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import JSON, ForeignKey, String
+from sqlalchemy import JSON, DateTime, ForeignKey, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .db import Base
+from .time import now_utc
 
 
 class Verdict(Base):
@@ -19,7 +20,7 @@ class Verdict(Base):
     headline: Mapped[str] = mapped_column(String(280))
     report_json: Mapped[dict[str, Any]] = mapped_column(JSON)
     key_levels_json: Mapped[dict[str, Any]] = mapped_column(JSON)
-    created_at: Mapped[datetime]
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
 
     model_used: Mapped[str] = mapped_column(String(64))
     depth: Mapped[str] = mapped_column(String(16), default="standard")  # standard | deeper
@@ -41,9 +42,9 @@ class Order(Base):
     qty: Mapped[float | None]
     notional: Mapped[float | None]
     status: Mapped[str] = mapped_column(String(32))
-    submitted_at: Mapped[datetime]
+    submitted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     filled_avg_price: Mapped[float | None]
-    created_at: Mapped[datetime]
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
 
     verdict: Mapped["Verdict | None"] = relationship()
 
@@ -53,4 +54,4 @@ class Ticker(Base):
 
     symbol: Mapped[str] = mapped_column(String(16), primary_key=True)
     display_name: Mapped[str] = mapped_column(String(128))
-    last_analyzed_at: Mapped[datetime | None]
+    last_analyzed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

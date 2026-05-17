@@ -1,19 +1,17 @@
-"""Verdict repository: persistence + (ticker, date) cache lookup."""
+"""Verdict repository: persistence + (ticker, trading-day) cache lookup."""
 
-from datetime import date, datetime, time, timedelta
+from datetime import date
 
 from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..models import Verdict
+from ..time import trading_day_bounds
 
 
-async def get_standard_for_today(
-    ticker: str, on: date, session: AsyncSession
-) -> Verdict | None:
-    """Most recent standard-depth Verdict for `ticker` created on `on` (UTC date)."""
-    start = datetime.combine(on, time.min)
-    end = start + timedelta(days=1)
+async def get_standard_for_today(ticker: str, on: date, session: AsyncSession) -> Verdict | None:
+    """Most recent standard-depth Verdict for `ticker` whose trading day is `on` (US/Eastern)."""
+    start, end = trading_day_bounds(on)
     stmt = (
         select(Verdict)
         .where(
