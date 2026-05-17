@@ -1,28 +1,55 @@
 """Verdict repository: persistence + (ticker, date) cache lookup."""
 
-from datetime import date
+from datetime import date, datetime, time, timedelta
 
+from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..models import Verdict
 
 
-async def get_standard_for_today(ticker: str, on: date, session: AsyncSession) -> Verdict | None:
-    raise NotImplementedError
+async def get_standard_for_today(
+    ticker: str, on: date, session: AsyncSession
+) -> Verdict | None:
+    """Most recent standard-depth Verdict for `ticker` created on `on` (UTC date)."""
+    start = datetime.combine(on, time.min)
+    end = start + timedelta(days=1)
+    stmt = (
+        select(Verdict)
+        .where(
+            Verdict.ticker == ticker.upper(),
+            Verdict.depth == "standard",
+            Verdict.created_at >= start,
+            Verdict.created_at < end,
+        )
+        .order_by(desc(Verdict.created_at))
+        .limit(1)
+    )
+    return (await session.execute(stmt)).scalar_one_or_none()
 
 
 async def get_by_id(verdict_id: int, session: AsyncSession) -> Verdict | None:
-    raise NotImplementedError
+    return await session.get(Verdict, verdict_id)
 
 
 async def list_recent(limit: int, session: AsyncSession) -> list[Verdict]:
-    raise NotImplementedError
+    stmt = select(Verdict).order_by(desc(Verdict.created_at)).limit(limit)
+    return list((await session.execute(stmt)).scalars().all())
 
 
 async def insert(verdict: Verdict, session: AsyncSession) -> Verdict:
-    raise NotImplementedError
+    session.add(verdict)
+    await session.commit()
+    await session.refresh(verdict)
+    return verdict
 
 
 async def find_deeper_child(parent_id: int, session: AsyncSession) -> Verdict | None:
     """For idempotency of the deepen endpoint."""
-    raise NotImplementedError
+    stmt = (
+        select(Verdict)
+        .where(Verdict.parent_verdict_id == parent_id, Verdict.depth == "deeper")
+        .order_by(desc(Verdict.created_at))
+        .limit(1)
+    )
+    return (await session.execute(stmt)).scalar_one_or_none()
