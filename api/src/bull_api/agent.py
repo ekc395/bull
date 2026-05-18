@@ -18,7 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from .config import settings
 from .models import Verdict
-from .prompts import ESCALATION_KEYWORDS, SYSTEM_PROMPT_STANDARD
+from .prompts import ESCALATION_KEYWORDS, SYSTEM_PROMPT_DEEPER, SYSTEM_PROMPT_STANDARD
 from .repos import verdicts as vrepo
 from .time import trading_day
 from .tools.fundamentals import get_fundamentals
@@ -186,5 +186,98 @@ async def analyze_ticker(
 
 
 async def deepen_verdict(verdict_id: int, session: AsyncSession) -> Verdict:
-    """User-triggered Opus pass. Reuses the parent verdict's facts_bundle_json — no re-fetching."""
-    raise NotImplementedError  # step 9
+    """User-triggered Opus pass. Reuses the parent verdict's facts_bundle_json — no re-fetching.
+
+    Idempotent: if a deeper child already exists for this parent, returns it
+    without spending a second Opus call.
+    """
+    parent = await vrepo.get_by_id(verdict_id, session)
+    if parent is None:
+        raise ValueError(f"Verdict {verdict_id} not found")
+    if parent.depth != "standard":
+        raise ValueError(
+            f"Cannot deepen verdict {verdict_id}: depth={parent.depth!r}, expected 'standard'"
+        )
+
+    existing = await vrepo.find_deeper_child(verdict_id, session)
+    if existing is not None:
+        return existing
+
+    facts = parent.facts_bundle_json  # replay the exact bundle the user already saw
+    parent_summary = {
+        "action": parent.action,
+        "confidence": parent.confidence,
+        "headline": parent.headline,
+        "report": parent.report_json,
+        "key_levels": parent.key_levels_json,
+        "escalation_reasons": parent.escalation_reasons_json,
+    }
+
+    client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
+    cached_tool = {**SUBMIT_VERDICT_TOOL, "cache_control": {"type": "ephemeral"}}
+    response = await client.messages.create(
+        model=settings.bull_deeper_model,
+        max_tokens=MAX_TOKENS,
+        system=[
+            {
+                "type": "text",
+                "text": SYSTEM_PROMPT_DEEPER,
+                "cache_control": {"type": "ephemeral"},
+            }
+        ],
+        tools=[cached_tool],
+        tool_choice={"type": "tool", "name": "submit_verdict"},
+        messages=[
+            {
+                "role": "user",
+                "content": (
+                    f"Standard verdict from {parent.model_used} for {parent.ticker}:\n\n"
+                    f"```json\n{json.dumps(parent_summary, indent=2, default=str)}\n```\n\n"
+                    f"Original facts bundle (as of {facts.get('as_of')}):\n\n"
+                    f"```json\n{json.dumps(facts, indent=2, default=str)}\n```\n\n"
+                    "Review the flagged concerns and the underlying facts. Affirm, refine, "
+                    "or override the prior verdict via submit_verdict. Be specific about "
+                    "where you agree or disagree. Include ALL required fields in the tool "
+                    "call (action, confidence, headline, report, key_levels) — repeat or "
+                    "refine the prior key_levels as needed; do not omit them."
+                ),
+            }
+        ],
+    )
+
+    payload = _extract_verdict_payload(response)
+    # Deeper passes don't compute their own escalation flags — the user already
+    # chose to deepen, so the recommendation is moot. Carry the parent's reasons
+    # forward so the audit trail shows what prompted the upgrade.
+
+    # Be lenient: if Opus ever omits a non-action field (rare but observed),
+    # fall back to the parent's value rather than failing after spending the call.
+    deeper = Verdict(
+        ticker=parent.ticker,
+        action=payload["action"],
+        confidence=payload.get("confidence", parent.confidence),
+        headline=payload.get("headline") or parent.headline,
+        report_json=payload.get("report") or parent.report_json,
+        key_levels_json=payload.get("key_levels") or parent.key_levels_json,
+        model_used=settings.bull_deeper_model,
+        depth="deeper",
+        parent_verdict_id=parent.id,
+        escalation_recommended=False,
+        escalation_reasons_json=parent.escalation_reasons_json,
+        raw_response_json={
+            "stop_reason": response.stop_reason,
+            "model": response.model,
+            "usage": {
+                "input_tokens": response.usage.input_tokens,
+                "output_tokens": response.usage.output_tokens,
+                "cache_creation_input_tokens": getattr(
+                    response.usage, "cache_creation_input_tokens", 0
+                ),
+                "cache_read_input_tokens": getattr(
+                    response.usage, "cache_read_input_tokens", 0
+                ),
+            },
+        },
+        facts_bundle_json=facts,  # carried verbatim from the parent
+    )
+    return await vrepo.insert(deeper, session)
