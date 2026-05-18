@@ -3,7 +3,14 @@
 CRITICAL: `paper=True` is hardcoded. Never construct a live TradingClient.
 """
 
-from typing import TypedDict
+from functools import lru_cache
+from typing import Any, TypedDict
+
+from alpaca.trading.client import TradingClient
+from alpaca.trading.enums import OrderSide, QueryOrderStatus, TimeInForce
+from alpaca.trading.requests import GetOrdersRequest, MarketOrderRequest
+
+from ..config import settings
 
 
 class AlpacaAccount(TypedDict):
@@ -20,22 +27,112 @@ class AlpacaPosition(TypedDict):
     unrealized_pl: float
 
 
+@lru_cache(maxsize=1)
+def _client() -> TradingClient:
+    if not settings.alpaca_api_key or not settings.alpaca_api_secret:
+        raise RuntimeError(
+            "Alpaca credentials missing. Set ALPACA_API_KEY and ALPACA_API_SECRET in api/.env."
+        )
+    # paper=True is intentional and hardcoded. Bull is a paper-trading-only app.
+    return TradingClient(
+        settings.alpaca_api_key,
+        settings.alpaca_api_secret,
+        paper=True,
+    )
+
+
+def _f(x: Any) -> float:
+    if x is None:
+        return 0.0
+    try:
+        return float(x)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _enum_value(x: Any) -> str:
+    return str(x.value if hasattr(x, "value") else x)
+
+
 def get_account() -> AlpacaAccount:
-    raise NotImplementedError
+    acct = _client().get_account()
+    return {
+        "equity": _f(acct.equity),
+        "cash": _f(acct.cash),
+        "buying_power": _f(acct.buying_power),
+    }
 
 
 def get_positions() -> list[AlpacaPosition]:
-    raise NotImplementedError
+    return [
+        {
+            "symbol": p.symbol,
+            "qty": _f(p.qty),
+            "avg_entry_price": _f(p.avg_entry_price),
+            "market_value": _f(p.market_value),
+            "unrealized_pl": _f(p.unrealized_pl),
+        }
+        for p in _client().get_all_positions()
+    ]
 
 
-def place_order(symbol: str, side: str, notional: float) -> dict:
-    """Market order, DAY TIF. notional = dollars to deploy. Always paper."""
-    raise NotImplementedError
+def place_order(symbol: str, side: str, notional: float) -> dict[str, Any]:
+    """Market order, DAY TIF. `notional` = dollars to deploy. Always paper."""
+    side_enum = OrderSide.BUY if side.lower() == "buy" else OrderSide.SELL
+    request = MarketOrderRequest(
+        symbol=symbol.upper(),
+        notional=notional,
+        side=side_enum,
+        time_in_force=TimeInForce.DAY,
+    )
+    order = _client().submit_order(request)
+    return {
+        "alpaca_order_id": str(order.id),
+        "symbol": order.symbol,
+        "side": side_enum.value,
+        "qty": _f(order.qty),
+        "notional": _f(order.notional),
+        "status": _enum_value(order.status),
+        "submitted_at": order.submitted_at,
+        "filled_avg_price": _f(order.filled_avg_price),
+    }
 
 
-def close_position(symbol: str) -> dict:
-    raise NotImplementedError
+def close_position(symbol: str) -> dict[str, Any]:
+    order = _client().close_position(symbol.upper())
+    return {
+        "alpaca_order_id": str(order.id),
+        "symbol": symbol.upper(),
+        "side": _enum_value(order.side),
+        "status": _enum_value(order.status),
+        "submitted_at": order.submitted_at,
+    }
 
 
-def get_recent_orders(limit: int = 50) -> list[dict]:
-    raise NotImplementedError
+def get_recent_orders(limit: int = 50) -> list[dict[str, Any]]:
+    request = GetOrdersRequest(status=QueryOrderStatus.ALL, limit=limit)
+    orders = _client().get_orders(filter=request)
+    return [
+        {
+            "alpaca_order_id": str(o.id),
+            "symbol": o.symbol,
+            "side": _enum_value(o.side),
+            "qty": _f(o.qty),
+            "notional": _f(o.notional),
+            "status": _enum_value(o.status),
+            "submitted_at": o.submitted_at,
+            "filled_avg_price": _f(o.filled_avg_price),
+        }
+        for o in orders
+    ]
+
+
+if __name__ == "__main__":
+    acct = get_account()
+    print(f"Paper account — equity ${acct['equity']:,.2f}  cash ${acct['cash']:,.2f}  "
+          f"buying power ${acct['buying_power']:,.2f}")
+    positions = get_positions()
+    print(f"{len(positions)} open position(s)")
+    for p in positions:
+        print(f"  {p['symbol']:6s}  qty={p['qty']:.4f}  "
+              f"@ ${p['avg_entry_price']:.2f}  pl ${p['unrealized_pl']:+.2f}")
