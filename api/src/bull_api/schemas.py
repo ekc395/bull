@@ -9,9 +9,14 @@ Action = Literal["BUY", "HOLD", "SELL"]
 
 
 class Level(BaseModel):
+    """Accepts both the deterministic S/R shape (touch_count + last_touch_date)
+    and the LLM-annotated shape from key_levels (note). All fields except
+    price are optional so a single schema covers both sources."""
+
     price: float
-    touch_count: int
+    touch_count: int | None = None
     last_touch_date: str | None = None
+    note: str | None = None
 
 
 class KeyLevels(BaseModel):
