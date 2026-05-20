@@ -113,3 +113,16 @@ export interface PricesResponse {
   indicators: Indicators;
   support_resistance: SupportResistance;
 }
+
+export interface NewsItem {
+  title: string;
+  source: string;
+  url: string;
+  published_at: string;
+  summary: string;
+}
+
+export interface NewsResponse {
+  ticker: string;
+  items: NewsItem[];
+}

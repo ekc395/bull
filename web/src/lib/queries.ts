@@ -7,6 +7,7 @@ import type {
   AccountResponse,
   AnalyzeRequest,
   ExecuteOrderRequest,
+  NewsResponse,
   OrderResponse,
   PositionResponse,
   PricesResponse,
@@ -22,6 +23,7 @@ export const qk = {
   verdicts: ["verdicts"] as const,
   verdict: (id: number) => ["verdicts", id] as const,
   prices: (ticker: string) => ["prices", ticker.toUpperCase()] as const,
+  news: (ticker: string) => ["news", ticker.toUpperCase()] as const,
 };
 
 // ---- Polling reads ----
@@ -33,6 +35,15 @@ export function usePrices(ticker: string | null | undefined, bars = 252) {
     enabled: !!ticker,
     refetchInterval: 60_000,
     staleTime: 30_000,
+  });
+}
+
+export function useNews(ticker: string | null | undefined, days = 7) {
+  return useQuery({
+    queryKey: ticker ? [...qk.news(ticker), days] : ["news", "_none"],
+    queryFn: () => apiFetch<NewsResponse>(`/news/${ticker}?days=${days}`),
+    enabled: !!ticker,
+    staleTime: 5 * 60_000,
   });
 }
 
