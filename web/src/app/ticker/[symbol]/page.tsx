@@ -5,7 +5,9 @@
 import Link from "next/link";
 import { use, useEffect, useRef } from "react";
 
+import { IndicatorTable } from "@/components/IndicatorTable";
 import { NewsList } from "@/components/NewsList";
+import { PriceChart } from "@/components/PriceChart";
 import { ReportSections } from "@/components/ReportSections";
 import { VerdictBanner } from "@/components/VerdictBanner";
 import { useAnalyze } from "@/lib/queries";
@@ -74,6 +76,22 @@ export default function TickerPage({
       {verdict && (
         <>
           <VerdictBanner verdict={verdict} />
+
+          <section className="space-y-2">
+            <h3 className="text-sm font-medium uppercase tracking-wide text-slate-500">
+              Chart
+            </h3>
+            <PriceChart ticker={symbol} />
+          </section>
+
+          <section className="space-y-2">
+            <h3 className="text-sm font-medium uppercase tracking-wide text-slate-500">
+              Indicators
+            </h3>
+            <div className="overflow-hidden rounded-lg border bg-white">
+              <IndicatorTable ticker={symbol} />
+            </div>
+          </section>
 
           <section className="space-y-2">
             <h3 className="text-sm font-medium uppercase tracking-wide text-slate-500">
