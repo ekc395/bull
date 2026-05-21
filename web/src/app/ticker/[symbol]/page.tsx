@@ -3,14 +3,17 @@
 "use client";
 
 import Link from "next/link";
-import { use, useEffect, useRef } from "react";
+import { use, useEffect, useRef, useState } from "react";
 
+import { DeeperAnalysisButton } from "@/components/DeeperAnalysisButton";
+import { ExecuteOrderButton } from "@/components/ExecuteOrderButton";
 import { IndicatorTable } from "@/components/IndicatorTable";
 import { NewsList } from "@/components/NewsList";
 import { PriceChart } from "@/components/PriceChart";
 import { ReportSections } from "@/components/ReportSections";
 import { VerdictBanner } from "@/components/VerdictBanner";
 import { useAnalyze } from "@/lib/queries";
+import type { VerdictResponse } from "@/types/api";
 
 export default function TickerPage({
   params,
@@ -22,16 +25,18 @@ export default function TickerPage({
 
   const analyze = useAnalyze();
   const triggered = useRef<string | null>(null);
+  const [deeperVerdict, setDeeperVerdict] = useState<VerdictResponse | null>(null);
 
   useEffect(() => {
     if (!symbol || triggered.current === symbol) return;
     triggered.current = symbol;
+    setDeeperVerdict(null);
     analyze.mutate({ ticker: symbol });
     // analyze.mutate identity is stable across renders; we intentionally key off symbol only.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [symbol]);
 
-  const verdict = analyze.data;
+  const verdict = deeperVerdict ?? analyze.data;
 
   return (
     <main className="container mx-auto max-w-6xl space-y-6 p-6">
@@ -76,6 +81,13 @@ export default function TickerPage({
       {verdict && (
         <>
           <VerdictBanner verdict={verdict} />
+
+          <ExecuteOrderButton verdict={verdict} />
+
+          <DeeperAnalysisButton
+            verdict={verdict}
+            onDeepened={setDeeperVerdict}
+          />
 
           <section className="space-y-2">
             <h3 className="text-sm font-medium uppercase tracking-wide text-slate-500">
