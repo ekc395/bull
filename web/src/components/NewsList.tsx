@@ -31,16 +31,15 @@ export function NewsList({ ticker }: { ticker: string }) {
             rel="noopener noreferrer"
             className="block space-y-1 hover:underline"
           >
-            <div className="text-sm font-medium text-slate-900">{item.title}</div>
-            <div className="flex items-center gap-2 text-xs text-slate-500">
-              <span>{item.source}</span>
+            <div className="break-words text-sm font-medium text-slate-900">
+              {item.title}
+            </div>
+            <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+              <span className="break-words">{item.source}</span>
               <span>·</span>
               <span>{new Date(item.published_at).toLocaleString()}</span>
             </div>
           </a>
-          {item.summary && (
-            <p className="mt-1 text-xs text-slate-600">{item.summary}</p>
-          )}
         </li>
       ))}
     </ul>
