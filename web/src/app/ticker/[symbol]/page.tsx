@@ -3,7 +3,7 @@
 "use client";
 
 import Link from "next/link";
-import { use, useEffect, useRef, useState } from "react";
+import { use, useState } from "react";
 
 import { DeeperAnalysisButton } from "@/components/DeeperAnalysisButton";
 import { ExecuteOrderButton } from "@/components/ExecuteOrderButton";
@@ -12,7 +12,7 @@ import { NewsList } from "@/components/NewsList";
 import { PriceChart } from "@/components/PriceChart";
 import { ReportSections } from "@/components/ReportSections";
 import { VerdictBanner } from "@/components/VerdictBanner";
-import { useAnalyze } from "@/lib/queries";
+import { useAnalyzeQuery } from "@/lib/queries";
 import type { VerdictResponse } from "@/types/api";
 
 export default function TickerPage({
@@ -23,18 +23,8 @@ export default function TickerPage({
   const { symbol: raw } = use(params);
   const symbol = decodeURIComponent(raw).toUpperCase();
 
-  const analyze = useAnalyze();
-  const triggered = useRef<string | null>(null);
+  const analyze = useAnalyzeQuery(symbol);
   const [deeperVerdict, setDeeperVerdict] = useState<VerdictResponse | null>(null);
-
-  useEffect(() => {
-    if (!symbol || triggered.current === symbol) return;
-    triggered.current = symbol;
-    setDeeperVerdict(null);
-    analyze.mutate({ ticker: symbol });
-    // analyze.mutate identity is stable across renders; we intentionally key off symbol only.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [symbol]);
 
   const verdict = deeperVerdict ?? analyze.data;
 
@@ -52,7 +42,7 @@ export default function TickerPage({
         </h1>
       </div>
 
-      {analyze.isPending && !verdict && (
+      {analyze.isLoading && !verdict && (
         <div className="rounded-lg border bg-white p-6 text-sm text-slate-600">
           Analyzing {symbol}… this typically takes 15–30 seconds.
         </div>
@@ -65,12 +55,7 @@ export default function TickerPage({
             : "Analysis failed."}
           <button
             type="button"
-            onClick={() => {
-              triggered.current = null;
-              analyze.reset();
-              triggered.current = symbol;
-              analyze.mutate({ ticker: symbol });
-            }}
+            onClick={() => analyze.refetch()}
             className="ml-3 rounded border border-red-300 bg-white px-2 py-0.5 text-xs font-medium text-red-700 hover:bg-red-100"
           >
             Retry
