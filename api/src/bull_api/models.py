@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import JSON, DateTime, ForeignKey, String
+from sqlalchemy import JSON, DateTime, Float, ForeignKey, Integer, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .db import Base
@@ -55,3 +55,27 @@ class Ticker(Base):
     symbol: Mapped[str] = mapped_column(String(16), primary_key=True)
     display_name: Mapped[str] = mapped_column(String(128))
     last_analyzed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class VerdictScore(Base):
+    """Realized-return score for a past verdict at a fixed trading-day horizon.
+
+    Populated by the scoring job (`bull_api.scoring`) once enough trading days
+    have elapsed since the verdict's `created_at`. One row per (verdict_id,
+    horizon_days). `hit` is computed dynamically from `action + realized_return_pct`
+    in summaries — keeping the threshold out of the schema lets us tune it later
+    without a migration.
+    """
+
+    __tablename__ = "verdict_scores"
+    __table_args__ = (UniqueConstraint("verdict_id", "horizon_days", name="uq_verdict_horizon"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    verdict_id: Mapped[int] = mapped_column(ForeignKey("verdicts.id"), index=True)
+    horizon_days: Mapped[int] = mapped_column(Integer)  # trading days
+    entry_close: Mapped[float] = mapped_column(Float)
+    exit_close: Mapped[float] = mapped_column(Float)
+    realized_return_pct: Mapped[float] = mapped_column(Float)
+    scored_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
+
+    verdict: Mapped["Verdict"] = relationship()
