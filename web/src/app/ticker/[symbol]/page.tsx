@@ -5,6 +5,7 @@
 import Link from "next/link";
 import { use, useState } from "react";
 
+import { AnalysisLoading } from "@/components/AnalysisLoading";
 import { DeeperAnalysisButton } from "@/components/DeeperAnalysisButton";
 import { ExecuteOrderButton } from "@/components/ExecuteOrderButton";
 import { IndicatorTable } from "@/components/IndicatorTable";
@@ -42,11 +43,7 @@ export default function TickerPage({
         </h1>
       </div>
 
-      {analyze.isLoading && !verdict && (
-        <div className="rounded-lg border bg-white p-6 text-sm text-slate-600">
-          Analyzing {symbol}… this typically takes 15–30 seconds.
-        </div>
-      )}
+      {analyze.isLoading && !verdict && <AnalysisLoading ticker={symbol} />}
 
       {analyze.isError && (
         <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
