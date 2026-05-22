@@ -1,11 +1,23 @@
 """Pydantic request/response schemas. Mirrors `web/src/types/api.ts`."""
 
-from datetime import datetime
-from typing import Literal
+from datetime import datetime, timezone
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, PlainSerializer
 
 Action = Literal["BUY", "HOLD", "SELL"]
+
+
+def _utc_iso(v: datetime) -> str:
+    # SQLite drops tz info on read, so DateTime(timezone=True) columns come back
+    # as naive datetimes that still represent UTC. Tag them so the frontend's
+    # new Date(...) doesn't reinterpret a UTC instant as local time.
+    if v.tzinfo is None:
+        v = v.replace(tzinfo=timezone.utc)
+    return v.isoformat()
+
+
+UTCDateTime = Annotated[datetime, PlainSerializer(_utc_iso, return_type=str)]
 
 
 class Level(BaseModel):
@@ -40,7 +52,7 @@ class VerdictResponse(BaseModel):
     headline: str
     report: Report
     key_levels: KeyLevels
-    created_at: datetime
+    created_at: UTCDateTime
     model_used: str
     depth: Literal["standard", "deeper"]
     parent_verdict_id: int | None
@@ -75,7 +87,7 @@ class OrderResponse(BaseModel):
     qty: float | None
     notional: float | None
     status: str
-    submitted_at: datetime
+    submitted_at: UTCDateTime
     filled_avg_price: float | None
 
 
