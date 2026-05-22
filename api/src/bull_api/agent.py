@@ -11,6 +11,7 @@ See plan.md → Backend → agent.py for the full flow.
 import asyncio
 import json
 import logging
+import re
 from typing import Any
 
 import anthropic
@@ -119,6 +120,49 @@ def _extract_verdict_payload(message: anthropic.types.Message) -> dict[str, Any]
     raise ValueError("Model did not call submit_verdict")
 
 
+_REPORT_FIELDS = (
+    "technical",
+    "fundamentals_and_supply_chain",
+    "news_sentiment",
+    "risks",
+    "reasoning",
+)
+_PARAM_TAG_RE = re.compile(
+    # Opus emits opening `<parameter name="X">` tags but sometimes omits the
+    # closing `</parameter>`. Match either a balanced close OR the next
+    # parameter opener OR end-of-string.
+    r'<parameter\s+name="([^"]+)"\s*>(.*?)(?:</parameter>|(?=<parameter\s+name=")|\Z)',
+    re.DOTALL,
+)
+
+
+def _coerce_report(
+    value: Any, fallback: dict[str, Any] | None = None
+) -> dict[str, str]:
+    """Defensively normalize the `report` tool input.
+
+    Opus 4.7 occasionally emits the report as a single string containing the
+    internal `<parameter name="...">...</parameter>` XML format instead of a
+    JSON object. Parse those tags back out and fill any remaining gaps from
+    `fallback` (the parent verdict's report on a deepen pass).
+    """
+    if isinstance(value, dict):
+        out = {k: str(v) for k, v in value.items() if isinstance(v, str)}
+    elif isinstance(value, str):
+        out = {m.group(1): m.group(2).strip() for m in _PARAM_TAG_RE.finditer(value)}
+        if not out:
+            out = {"reasoning": value.strip()}
+    else:
+        out = {}
+    for k in _REPORT_FIELDS:
+        if not out.get(k):
+            if fallback and isinstance(fallback.get(k), str) and fallback[k].strip():
+                out[k] = fallback[k]
+            else:
+                out[k] = ""
+    return {k: out[k] for k in _REPORT_FIELDS}
+
+
 async def analyze_ticker(
     ticker: str, session: AsyncSession, *, force: bool = False
 ) -> Verdict:
@@ -192,7 +236,7 @@ async def analyze_ticker(
         action=payload["action"],
         confidence=payload["confidence"],
         headline=payload["headline"],
-        report_json=payload["report"],
+        report_json=_coerce_report(payload.get("report")),
         key_levels_json=key_levels,
         # created_at auto-fills via the model's now_utc default.
         model_used=settings.bull_primary_model,
@@ -292,7 +336,7 @@ async def deepen_verdict(verdict_id: int, session: AsyncSession) -> Verdict:
         action=payload["action"],
         confidence=payload.get("confidence", parent.confidence),
         headline=payload.get("headline") or parent.headline,
-        report_json=payload.get("report") or parent.report_json,
+        report_json=_coerce_report(payload.get("report"), fallback=parent.report_json),
         key_levels_json=payload.get("key_levels") or parent.key_levels_json,
         model_used=settings.bull_deeper_model,
         depth="deeper",
