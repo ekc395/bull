@@ -23,6 +23,7 @@ from .repos import verdicts as vrepo
 from .time import trading_day
 from .tools.fundamentals import get_fundamentals
 from .tools.indicators import compute_indicators
+from .tools.market_context import get_market_context
 from .tools.news import get_recent_news
 from .tools.prices import get_price_history
 from .tools.registry import SUBMIT_VERDICT_TOOL
@@ -32,7 +33,9 @@ from .tools.supply_chain import get_supply_chain_context
 # Recent daily bars included in the facts bundle. 60 bars ≈ 3 months — enough for
 # the LLM to see the medium-term shape without bloating the context window.
 PRICE_TAIL_BARS = 60
-MAX_TOKENS = 2048
+# 4096 leaves headroom for the report's five narrative fields + key_levels.
+# 2048 was occasionally truncating the tool call mid-JSON.
+MAX_TOKENS = 4096
 
 
 def _prices_to_records(df: pd.DataFrame, tail: int = PRICE_TAIL_BARS) -> list[dict[str, Any]]:
@@ -53,18 +56,25 @@ def _prices_to_records(df: pd.DataFrame, tail: int = PRICE_TAIL_BARS) -> list[di
 
 
 async def _build_facts_bundle(ticker: str) -> dict[str, Any]:
-    """Parallel fetch all six tool outputs. Indicators + S/R depend on prices."""
-    # Phase 1: four independent fetches + prices (needed for phase 2).
+    """Parallel fetch all tool outputs. Indicators + S/R depend on prices;
+    market context depends on fundamentals (needs sector/industry to pick
+    the right sector ETF)."""
+    # Phase 1: independent fetches.
     prices_df, fundamentals, news_items, supply_chain = await asyncio.gather(
         asyncio.to_thread(get_price_history, ticker),
         asyncio.to_thread(get_fundamentals, ticker),
         asyncio.to_thread(get_recent_news, ticker),
         asyncio.to_thread(get_supply_chain_context, ticker),
     )
-    # Phase 2: indicators and S/R both consume the prices DataFrame.
-    indicators, sr = await asyncio.gather(
+    # Phase 2: indicators + S/R consume prices; market_context consumes sector/industry.
+    indicators, sr, market = await asyncio.gather(
         asyncio.to_thread(compute_indicators, prices_df),
         asyncio.to_thread(find_support_resistance, prices_df),
+        asyncio.to_thread(
+            get_market_context,
+            fundamentals.get("sector"),
+            fundamentals.get("industry"),
+        ),
     )
     return {
         "ticker": ticker.upper(),
@@ -75,6 +85,7 @@ async def _build_facts_bundle(ticker: str) -> dict[str, Any]:
         "fundamentals": fundamentals,
         "news": news_items,
         "supply_chain": supply_chain,
+        "market_context": market,
     }
 
 
@@ -153,13 +164,17 @@ async def analyze_ticker(
     payload = _extract_verdict_payload(response)
     escalated, reasons = _check_escalation(payload["confidence"], facts["news"])
 
+    # Sonnet occasionally drops `key_levels` despite the schema marking it required.
+    # Fall back to the deterministic S/R in the facts bundle — same shape.
+    key_levels = payload.get("key_levels") or facts["support_resistance"]
+
     verdict = Verdict(
         ticker=ticker,
         action=payload["action"],
         confidence=payload["confidence"],
         headline=payload["headline"],
         report_json=payload["report"],
-        key_levels_json=payload["key_levels"],
+        key_levels_json=key_levels,
         # created_at auto-fills via the model's now_utc default.
         model_used=settings.bull_primary_model,
         depth="standard",

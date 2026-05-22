@@ -6,7 +6,7 @@ because its 25 calls/day quota is tight.
 """
 
 import time
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import Any, TypedDict
 
 import httpx
@@ -25,6 +25,17 @@ class Fundamentals(TypedDict, total=False):
     profit_margins: float | None
     revenue_growth: float | None
     earnings_date: str | None
+    # Signed days from today to next earnings. Negative = recently reported.
+    # None if the source didn't return a date or the date is implausibly stale.
+    days_until_earnings: int | None
+    # Analyst consensus (best-effort, yfinance / Refinitiv panel).
+    analyst_target_mean: float | None
+    analyst_target_high: float | None
+    analyst_target_low: float | None
+    analyst_count: int | None
+    # 1.0 = strong buy, 3.0 = hold, 5.0 = strong sell.
+    recommendation_mean: float | None
+    recommendation_key: str | None
     source: str  # "finnhub" | "yfinance" | "alphavantage"
 
 
@@ -183,6 +194,59 @@ def _backfill_forward_pe(result: Fundamentals, ticker: str) -> Fundamentals:
     return result
 
 
+def _compute_days_until_earnings(earnings_date: str | None) -> int | None:
+    """Signed day delta from today (ET) to earnings_date. Clamped to ±90 days
+    so implausibly stale yfinance entries don't pollute the bundle."""
+    if not earnings_date:
+        return None
+    try:
+        ed = date.fromisoformat(earnings_date)
+    except ValueError:
+        return None
+    delta = (ed - trading_day()).days
+    if delta < -30 or delta > 180:
+        return None
+    return delta
+
+
+def _backfill_analyst_targets(result: Fundamentals, ticker: str) -> Fundamentals:
+    """Pull analyst price targets + recommendation grade from yfinance.
+
+    Source: Yahoo Finance's Refinitiv consensus panel. No paid Anthropic /
+    Finnhub equivalent on the free tier, so we always go through yfinance here.
+    Silent on failure — accuracy bonus, not load-bearing.
+    """
+    try:
+        info = yf.Ticker(ticker).info or {}
+    except Exception:
+        return result
+
+    tm = _to_float(info.get("targetMeanPrice"))
+    th = _to_float(info.get("targetHighPrice"))
+    tl = _to_float(info.get("targetLowPrice"))
+    count_raw = info.get("numberOfAnalystOpinions")
+    try:
+        count = int(count_raw) if count_raw is not None else None
+    except (TypeError, ValueError):
+        count = None
+    rm = _to_float(info.get("recommendationMean"))
+    rk = info.get("recommendationKey")
+
+    if tm is not None:
+        result["analyst_target_mean"] = tm
+    if th is not None:
+        result["analyst_target_high"] = th
+    if tl is not None:
+        result["analyst_target_low"] = tl
+    if count is not None:
+        result["analyst_count"] = count
+    if rm is not None:
+        result["recommendation_mean"] = rm
+    if isinstance(rk, str) and rk:
+        result["recommendation_key"] = rk
+    return result
+
+
 def get_fundamentals(ticker: str) -> Fundamentals:
     """Return company fundamentals for `ticker`, cached for 24h.
 
@@ -205,6 +269,8 @@ def get_fundamentals(ticker: str) -> Fundamentals:
         raise ValueError(f"No fundamentals available for {ticker!r}")
 
     result = _backfill_forward_pe(result, ticker)
+    result = _backfill_analyst_targets(result, ticker)
+    result["days_until_earnings"] = _compute_days_until_earnings(result.get("earnings_date"))
     _cache[key] = (now, result)
     return result
 
