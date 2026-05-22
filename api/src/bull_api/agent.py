@@ -10,17 +10,21 @@ See plan.md → Backend → agent.py for the full flow.
 
 import asyncio
 import json
+import logging
 from typing import Any
 
 import anthropic
 import pandas as pd
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from .checks import validate_verdict
 from .config import settings
 from .models import Verdict
 from .prompts import ESCALATION_KEYWORDS, SYSTEM_PROMPT_DEEPER, SYSTEM_PROMPT_STANDARD
 from .repos import verdicts as vrepo
 from .time import trading_day
+
+logger = logging.getLogger(__name__)
 from .tools.fundamentals import get_fundamentals
 from .tools.indicators import compute_indicators
 from .tools.market_context import get_market_context
@@ -164,6 +168,21 @@ async def analyze_ticker(
     payload = _extract_verdict_payload(response)
     escalated, reasons = _check_escalation(payload["confidence"], facts["news"])
 
+    # Post-verdict sanity checks. Surface contradictions between the verdict
+    # and its own inputs; do not auto-correct (see checks.py for sources).
+    warnings = validate_verdict(
+        payload, facts, escalated=escalated, escalation_reasons=reasons
+    )
+    if warnings:
+        for w in warnings:
+            logger.info(
+                "verdict warning [%s] %s/%s: %s",
+                ticker,
+                w["severity"],
+                w["code"],
+                w["message"],
+            )
+
     # Sonnet occasionally drops `key_levels` despite the schema marking it required.
     # Fall back to the deterministic S/R in the facts bundle — same shape.
     key_levels = payload.get("key_levels") or facts["support_resistance"]
@@ -194,6 +213,7 @@ async def analyze_ticker(
                     response.usage, "cache_read_input_tokens", 0
                 ),
             },
+            "internal_warnings": warnings,
         },
         facts_bundle_json=facts,
     )

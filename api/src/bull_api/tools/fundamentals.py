@@ -210,16 +210,28 @@ def _compute_days_until_earnings(earnings_date: str | None) -> int | None:
 
 
 def _backfill_analyst_targets(result: Fundamentals, ticker: str) -> Fundamentals:
-    """Pull analyst price targets + recommendation grade from yfinance.
+    """Pull analyst price targets + recommendation grade from yfinance, and
+    backfill `sector` when Finnhub left it empty.
 
-    Source: Yahoo Finance's Refinitiv consensus panel. No paid Anthropic /
-    Finnhub equivalent on the free tier, so we always go through yfinance here.
+    Finnhub doesn't return a separate sector field (only `finnhubIndustry`), so
+    when Finnhub is the primary source, downstream consumers like the market-
+    context tool can't resolve the right sector ETF (e.g. Technology → XLK).
+    yfinance's `info["sector"]` uses Yahoo's standard taxonomy that our
+    SECTOR_ETF map keys on, so we lift it from the same `info` dict we're
+    already fetching for analyst targets.
+
+    Source: Yahoo Finance's Refinitiv consensus panel for the analyst block.
     Silent on failure — accuracy bonus, not load-bearing.
     """
     try:
         info = yf.Ticker(ticker).info or {}
     except Exception:
         return result
+
+    if not result.get("sector"):
+        yf_sector = info.get("sector")
+        if isinstance(yf_sector, str) and yf_sector:
+            result["sector"] = yf_sector
 
     tm = _to_float(info.get("targetMeanPrice"))
     th = _to_float(info.get("targetHighPrice"))
