@@ -127,6 +127,9 @@ export function useDeepenVerdict() {
       apiPost<VerdictResponse>(`/verdicts/${parentId}/deepen`, {}),
     onSuccess: (deeper) => {
       qc.setQueryData(qk.verdict(deeper.id), deeper);
+      // Deepen mutates the original row in place, so the analyze cache for this
+      // ticker should reflect the upgraded model/confidence on re-mount.
+      qc.setQueryData(qk.analyze(deeper.ticker), deeper);
       qc.invalidateQueries({ queryKey: qk.verdicts });
     },
   });

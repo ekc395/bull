@@ -9,10 +9,8 @@ const COST_ESTIMATE = "~$0.10–0.15";
 
 export function DeeperAnalysisButton({
   verdict,
-  onDeepened,
 }: {
   verdict: VerdictResponse;
-  onDeepened?: (deeper: VerdictResponse) => void;
 }) {
   const deepen = useDeepenVerdict();
 
@@ -49,9 +47,7 @@ export function DeeperAnalysisButton({
               `Estimated cost: ${COST_ESTIMATE} (Anthropic API).\n\n` +
               `This will reuse the existing facts bundle — no extra data fetches.`;
             if (!confirm(msg)) return;
-            deepen.mutate(verdict.id, {
-              onSuccess: (deeper) => onDeepened?.(deeper),
-            });
+            deepen.mutate(verdict.id);
           }}
           className="shrink-0 rounded-md bg-slate-900 px-3 py-1.5 text-xs font-medium text-white shadow-sm hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
         >

@@ -174,7 +174,7 @@ async def analyze_ticker(
     ticker = ticker.upper()
 
     if not force:
-        cached = await vrepo.get_standard_for_today(ticker, trading_day(), session)
+        cached = await vrepo.get_for_today(ticker, trading_day(), session)
         if cached is not None:
             return cached
 
@@ -265,30 +265,31 @@ async def analyze_ticker(
 
 
 async def deepen_verdict(verdict_id: int, session: AsyncSession) -> Verdict:
-    """User-triggered Opus pass. Reuses the parent verdict's facts_bundle_json — no re-fetching.
+    """User-triggered Opus pass. Mutates the original verdict in place — no
+    child row, so the dashboard and analyze cache surface a single, upgraded
+    entry rather than two analyses for the same ticker/day.
 
-    Idempotent: if a deeper child already exists for this parent, returns it
-    without spending a second Opus call.
+    Reuses the parent's facts_bundle_json (no re-fetching). Idempotent: if the
+    row is already `depth="deeper"`, returns it without spending another Opus call.
     """
     parent = await vrepo.get_by_id(verdict_id, session)
     if parent is None:
         raise ValueError(f"Verdict {verdict_id} not found")
+    if parent.depth == "deeper":
+        return parent  # already deepened — no-op
     if parent.depth != "standard":
         raise ValueError(
             f"Cannot deepen verdict {verdict_id}: depth={parent.depth!r}, expected 'standard'"
         )
 
-    existing = await vrepo.find_deeper_child(verdict_id, session)
-    if existing is not None:
-        return existing
-
     facts = parent.facts_bundle_json  # replay the exact bundle the user already saw
-    parent_summary = {
+    prior_summary = {
         "action": parent.action,
         "confidence": parent.confidence,
         "headline": parent.headline,
         "report": parent.report_json,
         "key_levels": parent.key_levels_json,
+        "model_used": parent.model_used,
         "escalation_reasons": parent.escalation_reasons_json,
     }
 
@@ -311,7 +312,7 @@ async def deepen_verdict(verdict_id: int, session: AsyncSession) -> Verdict:
                 "role": "user",
                 "content": (
                     f"Standard verdict from {parent.model_used} for {parent.ticker}:\n\n"
-                    f"```json\n{json.dumps(parent_summary, indent=2, default=str)}\n```\n\n"
+                    f"```json\n{json.dumps(prior_summary, indent=2, default=str)}\n```\n\n"
                     f"Original facts bundle (as of {facts.get('as_of')}):\n\n"
                     f"```json\n{json.dumps(facts, indent=2, default=str)}\n```\n\n"
                     "Review the flagged concerns and the underlying facts. Affirm, refine, "
@@ -325,38 +326,32 @@ async def deepen_verdict(verdict_id: int, session: AsyncSession) -> Verdict:
     )
 
     payload = _extract_verdict_payload(response)
-    # Deeper passes don't compute their own escalation flags — the user already
-    # chose to deepen, so the recommendation is moot. Carry the parent's reasons
-    # forward so the audit trail shows what prompted the upgrade.
-
-    # Be lenient: if Opus ever omits a non-action field (rare but observed),
-    # fall back to the parent's value rather than failing after spending the call.
-    deeper = Verdict(
-        ticker=parent.ticker,
-        action=payload["action"],
-        confidence=payload.get("confidence", parent.confidence),
-        headline=payload.get("headline") or parent.headline,
-        report_json=_coerce_report(payload.get("report"), fallback=parent.report_json),
-        key_levels_json=payload.get("key_levels") or parent.key_levels_json,
-        model_used=settings.bull_deeper_model,
-        depth="deeper",
-        parent_verdict_id=parent.id,
-        escalation_recommended=False,
-        escalation_reasons_json=parent.escalation_reasons_json,
-        raw_response_json={
-            "stop_reason": response.stop_reason,
-            "model": response.model,
-            "usage": {
-                "input_tokens": response.usage.input_tokens,
-                "output_tokens": response.usage.output_tokens,
-                "cache_creation_input_tokens": getattr(
-                    response.usage, "cache_creation_input_tokens", 0
-                ),
-                "cache_read_input_tokens": getattr(
-                    response.usage, "cache_read_input_tokens", 0
-                ),
-            },
-        },
-        facts_bundle_json=facts,  # carried verbatim from the parent
+    # Be lenient: if Opus omits a non-action field (rare but observed), fall back
+    # to the prior value rather than failing after spending the call.
+    parent.action = payload["action"]
+    parent.confidence = payload.get("confidence", parent.confidence)
+    parent.headline = payload.get("headline") or parent.headline
+    parent.report_json = _coerce_report(
+        payload.get("report"), fallback=parent.report_json
     )
-    return await vrepo.insert(deeper, session)
+    parent.key_levels_json = payload.get("key_levels") or parent.key_levels_json
+    parent.model_used = settings.bull_deeper_model
+    parent.depth = "deeper"
+    parent.escalation_recommended = False
+    # escalation_reasons_json kept as-is for audit trail.
+    parent.raw_response_json = {
+        "prior_standard": parent.raw_response_json,
+        "stop_reason": response.stop_reason,
+        "model": response.model,
+        "usage": {
+            "input_tokens": response.usage.input_tokens,
+            "output_tokens": response.usage.output_tokens,
+            "cache_creation_input_tokens": getattr(
+                response.usage, "cache_creation_input_tokens", 0
+            ),
+            "cache_read_input_tokens": getattr(
+                response.usage, "cache_read_input_tokens", 0
+            ),
+        },
+    }
+    return await vrepo.save(parent, session)

@@ -3,7 +3,7 @@
 "use client";
 
 import Link from "next/link";
-import { use, useState } from "react";
+import { use } from "react";
 
 import { AnalysisLoading } from "@/components/AnalysisLoading";
 import { DeeperAnalysisButton } from "@/components/DeeperAnalysisButton";
@@ -14,7 +14,6 @@ import { PriceChart } from "@/components/PriceChart";
 import { ReportSections } from "@/components/ReportSections";
 import { VerdictBanner } from "@/components/VerdictBanner";
 import { useAnalyzeQuery } from "@/lib/queries";
-import type { VerdictResponse } from "@/types/api";
 
 export default function TickerPage({
   params,
@@ -25,9 +24,9 @@ export default function TickerPage({
   const symbol = decodeURIComponent(raw).toUpperCase();
 
   const analyze = useAnalyzeQuery(symbol);
-  const [deeperVerdict, setDeeperVerdict] = useState<VerdictResponse | null>(null);
-
-  const verdict = deeperVerdict ?? analyze.data;
+  // useDeepenVerdict writes the upgraded verdict into qk.analyze(symbol), so
+  // analyze.data reflects the deeper model/confidence after a successful deepen.
+  const verdict = analyze.data;
 
   return (
     <main className="container mx-auto max-w-6xl space-y-6 p-6">
@@ -66,10 +65,7 @@ export default function TickerPage({
 
           <ExecuteOrderButton verdict={verdict} />
 
-          <DeeperAnalysisButton
-            verdict={verdict}
-            onDeepened={setDeeperVerdict}
-          />
+          <DeeperAnalysisButton verdict={verdict} />
 
           <section className="space-y-2">
             <h3 className="text-sm font-medium uppercase tracking-wide text-slate-500">
