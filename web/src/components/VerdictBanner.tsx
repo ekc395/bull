@@ -56,9 +56,6 @@ export function VerdictBanner({ verdict }: { verdict: VerdictResponse }) {
         <span className="rounded bg-white/70 px-2 py-0.5 font-mono">
           {verdict.model_used}
         </span>
-        <span className="rounded bg-white/70 px-2 py-0.5 capitalize">
-          {verdict.depth} analysis
-        </span>
         <span className="ml-auto italic">Not financial advice.</span>
       </div>
     </section>

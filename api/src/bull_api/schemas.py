@@ -54,10 +54,6 @@ class VerdictResponse(BaseModel):
     key_levels: KeyLevels
     created_at: UTCDateTime
     model_used: str
-    depth: Literal["standard", "deeper"]
-    parent_verdict_id: int | None
-    escalation_recommended: bool
-    escalation_reasons: list[str]
 
 
 class AnalyzeRequest(BaseModel):

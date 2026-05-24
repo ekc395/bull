@@ -23,10 +23,6 @@ class Verdict(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
 
     model_used: Mapped[str] = mapped_column(String(64))
-    depth: Mapped[str] = mapped_column(String(16), default="standard")  # standard | deeper
-    parent_verdict_id: Mapped[int | None] = mapped_column(ForeignKey("verdicts.id"), nullable=True)
-    escalation_recommended: Mapped[bool] = mapped_column(default=False)
-    escalation_reasons_json: Mapped[list[str]] = mapped_column(JSON, default=list)
     raw_response_json: Mapped[dict[str, Any]] = mapped_column(JSON)
     facts_bundle_json: Mapped[dict[str, Any]] = mapped_column(JSON)
 

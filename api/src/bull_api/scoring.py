@@ -10,7 +10,7 @@ Entry points:
   - score_pending_verdicts(session) — find verdicts past horizon without
     scores; score them
   - summary(session, threshold=...) — aggregate hit rate per (action, horizon)
-    plus breakdowns by model and depth
+    plus a per-model breakdown
 
 Scheduling: manual via `python -m bull_api.scoring` or POST /scores/run.
 No cron — that's the user's job (launchd / GitHub Actions / etc.).
@@ -163,13 +163,12 @@ def _hit_stats(hits: list[bool]) -> dict[str, float | int | None]:
 
 
 async def summary(session: AsyncSession, *, threshold: float = 0.0) -> dict[str, Any]:
-    """Hit rate per (action, horizon) plus per-model and per-depth breakdowns."""
+    """Hit rate per (action, horizon) plus a per-model breakdown."""
     stmt = select(VerdictScore, Verdict).join(Verdict, VerdictScore.verdict_id == Verdict.id)
     rows = list((await session.execute(stmt)).all())
 
     overall: dict[tuple[str, int], list[bool]] = defaultdict(list)
     by_model: dict[tuple[str, str, int], list[bool]] = defaultdict(list)
-    by_depth: dict[tuple[str, str, int], list[bool]] = defaultdict(list)
     rets: dict[tuple[str, int], list[float]] = defaultdict(list)
 
     for score, verdict in rows:
@@ -179,7 +178,6 @@ async def summary(session: AsyncSession, *, threshold: float = 0.0) -> dict[str,
         key = (verdict.action, score.horizon_days)
         overall[key].append(hit)
         by_model[(verdict.model_used, *key)].append(hit)
-        by_depth[(verdict.depth, *key)].append(hit)
         rets[key].append(score.realized_return_pct)
 
     return {
@@ -191,9 +189,6 @@ async def summary(session: AsyncSession, *, threshold: float = 0.0) -> dict[str,
         },
         "by_model": {
             f"{m}|{a}@{h}d": _hit_stats(v) for (m, a, h), v in sorted(by_model.items())
-        },
-        "by_depth": {
-            f"{d}|{a}@{h}d": _hit_stats(v) for (d, a, h), v in sorted(by_depth.items())
         },
     }
 

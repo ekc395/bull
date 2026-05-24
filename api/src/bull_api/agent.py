@@ -1,9 +1,7 @@
 """Agent: deterministic tool fetch + single-shot synthesis.
 
-Two entry points:
-- analyze_ticker(ticker, session, force=False) → always Sonnet, NEVER calls Opus.
-  Computes `escalation_recommended` + reasons advisorily.
-- deepen_verdict(verdict_id, session) → user-initiated Opus pass on the same facts bundle.
+One entry point: analyze_ticker(ticker, session, force=False) → Opus pass on a
+parallel-fetched facts bundle.
 
 See plan.md → Backend → agent.py for the full flow.
 """
@@ -21,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from .checks import validate_verdict
 from .config import settings
 from .models import Verdict
-from .prompts import ESCALATION_KEYWORDS, SYSTEM_PROMPT_DEEPER, SYSTEM_PROMPT_STANDARD
+from .prompts import SYSTEM_PROMPT
 from .repos import verdicts as vrepo
 from .time import trading_day
 
@@ -94,24 +92,6 @@ async def _build_facts_bundle(ticker: str) -> dict[str, Any]:
     }
 
 
-def _check_escalation(
-    confidence: int, news: list[dict[str, Any]]
-) -> tuple[bool, list[str]]:
-    """Advisory flags. No LLM call. Recommends Opus follow-up if any fire."""
-    reasons: list[str] = []
-    if confidence < settings.bull_escalation_confidence_threshold:
-        reasons.append(f"Low confidence ({confidence}%)")
-    for item in news:
-        title = (item.get("title") or "").lower()
-        for kw in ESCALATION_KEYWORDS:
-            if kw in title:
-                reasons.append(
-                    f"Material news: '{kw}' in \"{(item.get('title') or '')[:100]}\""
-                )
-                break  # one keyword flag per article max
-    return (len(reasons) > 0, reasons)
-
-
 def _extract_verdict_payload(message: anthropic.types.Message) -> dict[str, Any]:
     """Pull the submit_verdict tool_use block out of the model's response."""
     for block in message.content:
@@ -136,15 +116,13 @@ _PARAM_TAG_RE = re.compile(
 )
 
 
-def _coerce_report(
-    value: Any, fallback: dict[str, Any] | None = None
-) -> dict[str, str]:
+def _coerce_report(value: Any) -> dict[str, str]:
     """Defensively normalize the `report` tool input.
 
     Opus 4.7 occasionally emits the report as a single string containing the
     internal `<parameter name="...">...</parameter>` XML format instead of a
-    JSON object. Parse those tags back out and fill any remaining gaps from
-    `fallback` (the parent verdict's report on a deepen pass).
+    JSON object. Parse those tags back out and pad missing fields with empty
+    strings so the response schema stays valid.
     """
     if isinstance(value, dict):
         out = {k: str(v) for k, v in value.items() if isinstance(v, str)}
@@ -156,20 +134,17 @@ def _coerce_report(
         out = {}
     for k in _REPORT_FIELDS:
         if not out.get(k):
-            if fallback and isinstance(fallback.get(k), str) and fallback[k].strip():
-                out[k] = fallback[k]
-            else:
-                out[k] = ""
+            out[k] = ""
     return {k: out[k] for k in _REPORT_FIELDS}
 
 
 async def analyze_ticker(
     ticker: str, session: AsyncSession, *, force: bool = False
 ) -> Verdict:
-    """Standard (Sonnet) analysis. Never calls Opus.
+    """Run the Opus analysis on the ticker's facts bundle.
 
-    Caching: same ticker, same ET trading day, depth='standard' returns the
-    cached row without any LLM cost. Bypass with force=True.
+    Caching: same ticker, same ET trading day returns the cached row without
+    any LLM cost. Bypass with force=True.
     """
     ticker = ticker.upper()
 
@@ -186,12 +161,12 @@ async def analyze_ticker(
     # per-block token threshold on its own.
     cached_tool = {**SUBMIT_VERDICT_TOOL, "cache_control": {"type": "ephemeral"}}
     response = await client.messages.create(
-        model=settings.bull_primary_model,
+        model=settings.bull_model,
         max_tokens=MAX_TOKENS,
         system=[
             {
                 "type": "text",
-                "text": SYSTEM_PROMPT_STANDARD,
+                "text": SYSTEM_PROMPT,
                 "cache_control": {"type": "ephemeral"},
             }
         ],
@@ -210,13 +185,10 @@ async def analyze_ticker(
     )
 
     payload = _extract_verdict_payload(response)
-    escalated, reasons = _check_escalation(payload["confidence"], facts["news"])
 
     # Post-verdict sanity checks. Surface contradictions between the verdict
     # and its own inputs; do not auto-correct (see checks.py for sources).
-    warnings = validate_verdict(
-        payload, facts, escalated=escalated, escalation_reasons=reasons
-    )
+    warnings = validate_verdict(payload, facts)
     if warnings:
         for w in warnings:
             logger.info(
@@ -227,7 +199,7 @@ async def analyze_ticker(
                 w["message"],
             )
 
-    # Sonnet occasionally drops `key_levels` despite the schema marking it required.
+    # Opus occasionally drops `key_levels` despite the schema marking it required.
     # Fall back to the deterministic S/R in the facts bundle — same shape.
     key_levels = payload.get("key_levels") or facts["support_resistance"]
 
@@ -239,11 +211,7 @@ async def analyze_ticker(
         report_json=_coerce_report(payload.get("report")),
         key_levels_json=key_levels,
         # created_at auto-fills via the model's now_utc default.
-        model_used=settings.bull_primary_model,
-        depth="standard",
-        parent_verdict_id=None,
-        escalation_recommended=escalated,
-        escalation_reasons_json=reasons,
+        model_used=settings.bull_model,
         raw_response_json={
             "stop_reason": response.stop_reason,
             "model": response.model,
@@ -262,96 +230,3 @@ async def analyze_ticker(
         facts_bundle_json=facts,
     )
     return await vrepo.insert(verdict, session)
-
-
-async def deepen_verdict(verdict_id: int, session: AsyncSession) -> Verdict:
-    """User-triggered Opus pass. Mutates the original verdict in place — no
-    child row, so the dashboard and analyze cache surface a single, upgraded
-    entry rather than two analyses for the same ticker/day.
-
-    Reuses the parent's facts_bundle_json (no re-fetching). Idempotent: if the
-    row is already `depth="deeper"`, returns it without spending another Opus call.
-    """
-    parent = await vrepo.get_by_id(verdict_id, session)
-    if parent is None:
-        raise ValueError(f"Verdict {verdict_id} not found")
-    if parent.depth == "deeper":
-        return parent  # already deepened — no-op
-    if parent.depth != "standard":
-        raise ValueError(
-            f"Cannot deepen verdict {verdict_id}: depth={parent.depth!r}, expected 'standard'"
-        )
-
-    facts = parent.facts_bundle_json  # replay the exact bundle the user already saw
-    prior_summary = {
-        "action": parent.action,
-        "confidence": parent.confidence,
-        "headline": parent.headline,
-        "report": parent.report_json,
-        "key_levels": parent.key_levels_json,
-        "model_used": parent.model_used,
-        "escalation_reasons": parent.escalation_reasons_json,
-    }
-
-    client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
-    cached_tool = {**SUBMIT_VERDICT_TOOL, "cache_control": {"type": "ephemeral"}}
-    response = await client.messages.create(
-        model=settings.bull_deeper_model,
-        max_tokens=MAX_TOKENS,
-        system=[
-            {
-                "type": "text",
-                "text": SYSTEM_PROMPT_DEEPER,
-                "cache_control": {"type": "ephemeral"},
-            }
-        ],
-        tools=[cached_tool],
-        tool_choice={"type": "tool", "name": "submit_verdict"},
-        messages=[
-            {
-                "role": "user",
-                "content": (
-                    f"Standard verdict from {parent.model_used} for {parent.ticker}:\n\n"
-                    f"```json\n{json.dumps(prior_summary, indent=2, default=str)}\n```\n\n"
-                    f"Original facts bundle (as of {facts.get('as_of')}):\n\n"
-                    f"```json\n{json.dumps(facts, indent=2, default=str)}\n```\n\n"
-                    "Review the flagged concerns and the underlying facts. Affirm, refine, "
-                    "or override the prior verdict via submit_verdict. Be specific about "
-                    "where you agree or disagree. Include ALL required fields in the tool "
-                    "call (action, confidence, headline, report, key_levels) — repeat or "
-                    "refine the prior key_levels as needed; do not omit them."
-                ),
-            }
-        ],
-    )
-
-    payload = _extract_verdict_payload(response)
-    # Be lenient: if Opus omits a non-action field (rare but observed), fall back
-    # to the prior value rather than failing after spending the call.
-    parent.action = payload["action"]
-    parent.confidence = payload.get("confidence", parent.confidence)
-    parent.headline = payload.get("headline") or parent.headline
-    parent.report_json = _coerce_report(
-        payload.get("report"), fallback=parent.report_json
-    )
-    parent.key_levels_json = payload.get("key_levels") or parent.key_levels_json
-    parent.model_used = settings.bull_deeper_model
-    parent.depth = "deeper"
-    parent.escalation_recommended = False
-    # escalation_reasons_json kept as-is for audit trail.
-    parent.raw_response_json = {
-        "prior_standard": parent.raw_response_json,
-        "stop_reason": response.stop_reason,
-        "model": response.model,
-        "usage": {
-            "input_tokens": response.usage.input_tokens,
-            "output_tokens": response.usage.output_tokens,
-            "cache_creation_input_tokens": getattr(
-                response.usage, "cache_creation_input_tokens", 0
-            ),
-            "cache_read_input_tokens": getattr(
-                response.usage, "cache_read_input_tokens", 0
-            ),
-        },
-    }
-    return await vrepo.save(parent, session)

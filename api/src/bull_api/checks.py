@@ -281,30 +281,6 @@ def _volume_confirmation(payload: dict[str, Any], facts: dict[str, Any]) -> Warn
     return None
 
 
-def _confidence_consistency(
-    payload: dict[str, Any],
-    escalated: bool,
-    reasons: list[str],
-) -> Warning | None:
-    """High confidence (>=80) while the deterministic escalation layer fired.
-
-    Source: internal self-consistency. If the system's own escalation logic
-    sees material news / low-confidence triggers, a >=80 verdict means the
-    model is glossing the same flags the system already surfaced.
-    """
-    conf = payload.get("confidence")
-    if conf is None or not escalated:
-        return None
-    if conf >= 80:
-        return {
-            "code": "high_confidence_with_escalation",
-            "severity": "warn",
-            "message": f"Confidence {conf} but escalation flags fired ({len(reasons)}): {reasons}",
-            "source": "internal consistency",
-        }
-    return None
-
-
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
@@ -313,12 +289,8 @@ def _confidence_consistency(
 def validate_verdict(
     payload: dict[str, Any],
     facts: dict[str, Any],
-    *,
-    escalated: bool = False,
-    escalation_reasons: list[str] | None = None,
 ) -> list[Warning]:
     """Run every check; return the non-None warnings."""
-    reasons = escalation_reasons or []
     results: list[Warning | None] = [
         _trend_stack_aligned(payload, facts),
         _sector_confirmation(payload, facts),
@@ -329,6 +301,5 @@ def validate_verdict(
         _risk_reward(payload, facts),
         _earnings_window(payload, facts),
         _volume_confirmation(payload, facts),
-        _confidence_consistency(payload, escalated, reasons),
     ]
     return [w for w in results if w is not None]

@@ -34,10 +34,6 @@ export interface VerdictResponse {
   key_levels: KeyLevels;
   created_at: string;
   model_used: string;
-  depth: "standard" | "deeper";
-  parent_verdict_id: number | null;
-  escalation_recommended: boolean;
-  escalation_reasons: string[];
 }
 
 export interface AnalyzeRequest {

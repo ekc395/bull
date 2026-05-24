@@ -7,7 +7,6 @@ import { useSearchParams } from "next/navigation";
 import { use } from "react";
 
 import { AnalysisLoading } from "@/components/AnalysisLoading";
-import { DeeperAnalysisButton } from "@/components/DeeperAnalysisButton";
 import { ExecuteOrderButton } from "@/components/ExecuteOrderButton";
 import { IndicatorTable } from "@/components/IndicatorTable";
 import { NewsList } from "@/components/NewsList";
@@ -33,8 +32,6 @@ export default function TickerPage({
   const analyze = useAnalyzeQuery(historical ? null : symbol);
   const historicalVerdict = useVerdict(historical ? verdictId : null);
 
-  // useDeepenVerdict writes the upgraded verdict into qk.analyze(symbol), so
-  // analyze.data reflects the deeper model/confidence after a successful deepen.
   const active = historical ? historicalVerdict : analyze;
   const verdict = active.data;
 
@@ -99,8 +96,6 @@ export default function TickerPage({
           <VerdictBanner verdict={verdict} />
 
           <ExecuteOrderButton verdict={verdict} />
-
-          <DeeperAnalysisButton verdict={verdict} />
 
           <section className="space-y-2">
             <h3 className="text-sm font-medium uppercase tracking-wide text-slate-500">
