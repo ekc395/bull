@@ -13,6 +13,9 @@ import type {
   PortfolioHistoryResponse,
   PositionResponse,
   PricesResponse,
+  ScreenerPreviewResponse,
+  ScreenerRunRequest,
+  ScreenerRunResponse,
   VerdictResponse,
 } from "../types/api";
 
@@ -144,6 +147,24 @@ export function useExecuteOrder() {
       qc.invalidateQueries({ queryKey: qk.positions });
       qc.invalidateQueries({ queryKey: qk.orders });
       qc.invalidateQueries({ queryKey: qk.account });
+    },
+  });
+}
+
+export function useScreenerPreview() {
+  return useMutation({
+    mutationFn: () => apiPost<ScreenerPreviewResponse>("/screener/preview", {}),
+  });
+}
+
+export function useScreenerRun() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (req: ScreenerRunRequest) =>
+      apiPost<ScreenerRunResponse>("/screener/run", req),
+    onSuccess: (res) => {
+      res.verdicts.forEach((v) => qc.setQueryData(qk.verdict(v.id), v));
+      qc.invalidateQueries({ queryKey: qk.verdicts });
     },
   });
 }
