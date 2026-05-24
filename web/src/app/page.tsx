@@ -23,7 +23,15 @@ export default function DashboardPage() {
       <PortfolioHero />
 
       <section className="space-y-2">
-        <h2 className="text-sm font-medium uppercase tracking-wide text-slate-500">Analyze</h2>
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-medium uppercase tracking-wide text-slate-500">Analyze</h2>
+          <Link
+            href="/screener"
+            className="text-xs font-medium text-slate-600 hover:text-slate-900 hover:underline"
+          >
+            Screen S&P 500 →
+          </Link>
+        </div>
         <TickerSearch />
       </section>
 
