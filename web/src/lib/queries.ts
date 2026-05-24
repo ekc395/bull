@@ -9,6 +9,8 @@ import type {
   ExecuteOrderRequest,
   NewsResponse,
   OrderResponse,
+  PortfolioHistoryPeriod,
+  PortfolioHistoryResponse,
   PositionResponse,
   PricesResponse,
   VerdictResponse,
@@ -25,6 +27,8 @@ export const qk = {
   prices: (ticker: string) => ["prices", ticker.toUpperCase()] as const,
   news: (ticker: string) => ["news", ticker.toUpperCase()] as const,
   analyze: (ticker: string) => ["analyze", ticker.toUpperCase()] as const,
+  portfolioHistory: (period: PortfolioHistoryPeriod) =>
+    ["portfolio-history", period] as const,
 };
 
 // ---- Polling reads ----
@@ -53,6 +57,18 @@ export function useAccount() {
     queryKey: qk.account,
     queryFn: () => apiFetch<AccountResponse>("/account"),
     refetchInterval: 10_000,
+  });
+}
+
+export function usePortfolioHistory(period: PortfolioHistoryPeriod) {
+  return useQuery({
+    queryKey: qk.portfolioHistory(period),
+    queryFn: () =>
+      apiFetch<PortfolioHistoryResponse>(
+        `/portfolio/history?period=${encodeURIComponent(period)}`,
+      ),
+    refetchInterval: 30_000,
+    staleTime: 15_000,
   });
 }
 

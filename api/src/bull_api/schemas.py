@@ -79,6 +79,15 @@ class PositionResponse(BaseModel):
     unrealized_pl: float
 
 
+class PortfolioHistoryResponse(BaseModel):
+    timestamp: list[int]
+    equity: list[float]
+    profit_loss: list[float]
+    profit_loss_pct: list[float | None]
+    base_value: float | None
+    timeframe: str
+
+
 class OrderResponse(BaseModel):
     id: int
     alpaca_order_id: str

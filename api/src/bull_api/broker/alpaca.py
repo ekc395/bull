@@ -8,7 +8,11 @@ from typing import Any, TypedDict
 
 from alpaca.trading.client import TradingClient
 from alpaca.trading.enums import OrderSide, QueryOrderStatus, TimeInForce
-from alpaca.trading.requests import GetOrdersRequest, MarketOrderRequest
+from alpaca.trading.requests import (
+    GetOrdersRequest,
+    GetPortfolioHistoryRequest,
+    MarketOrderRequest,
+)
 
 from ..config import settings
 
@@ -25,6 +29,15 @@ class AlpacaPosition(TypedDict):
     avg_entry_price: float
     market_value: float
     unrealized_pl: float
+
+
+class AlpacaPortfolioHistory(TypedDict):
+    timestamp: list[int]
+    equity: list[float]
+    profit_loss: list[float]
+    profit_loss_pct: list[float | None]
+    base_value: float | None
+    timeframe: str
 
 
 @lru_cache(maxsize=1)
@@ -106,6 +119,21 @@ def close_position(symbol: str) -> dict[str, Any]:
         "side": _enum_value(order.side),
         "status": _enum_value(order.status),
         "submitted_at": order.submitted_at,
+    }
+
+
+def get_portfolio_history(period: str = "1M", timeframe: str | None = None) -> AlpacaPortfolioHistory:
+    """Account equity time-series. `period` like 1D/1W/1M/3M/1Y; `timeframe` like 5Min/15Min/1H/1D.
+    If `timeframe` is None, Alpaca picks a sensible default for the period."""
+    req = GetPortfolioHistoryRequest(period=period, timeframe=timeframe)
+    h = _client().get_portfolio_history(history_filter=req)
+    return {
+        "timestamp": list(h.timestamp or []),
+        "equity": [_f(v) for v in (h.equity or [])],
+        "profit_loss": [_f(v) for v in (h.profit_loss or [])],
+        "profit_loss_pct": [None if v is None else _f(v) for v in (h.profit_loss_pct or [])],
+        "base_value": None if h.base_value is None else _f(h.base_value),
+        "timeframe": h.timeframe,
     }
 
 

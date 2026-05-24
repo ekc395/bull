@@ -59,6 +59,17 @@ export interface PositionResponse {
   unrealized_pl: number;
 }
 
+export type PortfolioHistoryPeriod = "1D" | "1W" | "1M" | "3M" | "1Y";
+
+export interface PortfolioHistoryResponse {
+  timestamp: number[];
+  equity: number[];
+  profit_loss: number[];
+  profit_loss_pct: (number | null)[];
+  base_value: number | null;
+  timeframe: string;
+}
+
 export interface OrderResponse {
   id: number;
   alpaca_order_id: string;

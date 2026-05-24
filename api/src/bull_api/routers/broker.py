@@ -16,6 +16,7 @@ from ..schemas import (
     AccountResponse,
     ExecuteOrderRequest,
     OrderResponse,
+    PortfolioHistoryResponse,
     PositionResponse,
 )
 from ..time import now_utc
@@ -53,6 +54,34 @@ async def get_positions() -> list[PositionResponse]:
     except RuntimeError as e:
         raise HTTPException(status_code=503, detail=str(e)) from e
     return [PositionResponse(**p) for p in data]
+
+
+# Allowed values mirror Alpaca's portfolio-history API. The frontend's range
+# toggle is the only intended caller, but we validate explicitly so a typo'd
+# URL doesn't get forwarded to Alpaca and surface as an opaque 422.
+_ALLOWED_PERIODS = {"1D", "1W", "1M", "3M", "1Y"}
+_ALLOWED_TIMEFRAMES = {"1Min", "5Min", "15Min", "1H", "1D"}
+
+
+@router.get("/portfolio/history", response_model=PortfolioHistoryResponse)
+async def get_portfolio_history(
+    period: str = "1M", timeframe: str | None = None
+) -> PortfolioHistoryResponse:
+    if period not in _ALLOWED_PERIODS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"period must be one of {sorted(_ALLOWED_PERIODS)}",
+        )
+    if timeframe is not None and timeframe not in _ALLOWED_TIMEFRAMES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"timeframe must be one of {sorted(_ALLOWED_TIMEFRAMES)}",
+        )
+    try:
+        data = await asyncio.to_thread(alpaca.get_portfolio_history, period, timeframe)
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e)) from e
+    return PortfolioHistoryResponse(**data)
 
 
 @router.post("/orders", response_model=OrderResponse)

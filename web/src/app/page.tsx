@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 
-import { AccountPanel } from "@/components/AccountPanel";
+import { PortfolioHero } from "@/components/PortfolioHero";
 import { PositionsTable } from "@/components/PositionsTable";
 import { TickerSearch } from "@/components/TickerSearch";
 import { TradeJournal } from "@/components/TradeJournal";
@@ -20,15 +20,14 @@ export default function DashboardPage() {
         </p>
       </header>
 
+      <PortfolioHero />
+
       <section className="space-y-2">
         <h2 className="text-sm font-medium uppercase tracking-wide text-slate-500">Analyze</h2>
         <TickerSearch />
       </section>
 
-      <section className="grid gap-4 md:grid-cols-2">
-        <AccountPanel />
-        <PositionsTable />
-      </section>
+      <PositionsTable />
 
       <section className="space-y-2">
         <h2 className="text-sm font-medium uppercase tracking-wide text-slate-500">Recent verdicts</h2>
