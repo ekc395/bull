@@ -98,3 +98,35 @@ class OrderResponse(BaseModel):
 
 class ExecuteOrderRequest(BaseModel):
     verdict_id: int
+
+
+class ScreenerCandidate(BaseModel):
+    symbol: str
+    company_name: str
+    sector: str
+    close: float
+    rsi_14: float
+    macd_hist: float
+    sma_50: float
+    sma_200: float
+    volume_current: float
+    volume_20d_avg: float
+
+
+class ScreenerPreviewResponse(BaseModel):
+    candidates: list[ScreenerCandidate]
+    universe_size: int
+    filtered_out: int
+    overflowed: bool
+    estimated_cost_usd: float
+    model: str
+    errors: list[str]
+
+
+class ScreenerRunRequest(BaseModel):
+    tickers: list[str] = Field(min_length=1, max_length=30)
+
+
+class ScreenerRunResponse(BaseModel):
+    verdicts: list[VerdictResponse]
+    errors: list[str]
