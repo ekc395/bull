@@ -49,7 +49,7 @@ export default function DashboardPage() {
               {verdicts.data.map((v) => (
                 <li key={v.id}>
                   <Link
-                    href={`/ticker/${v.ticker}`}
+                    href={`/ticker/${v.ticker}?v=${v.id}`}
                     className="flex items-center justify-between gap-4 p-3 text-sm hover:bg-slate-50"
                   >
                     <div className="flex items-center gap-3">

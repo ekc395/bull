@@ -3,6 +3,7 @@
 "use client";
 
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { use } from "react";
 
 import { AnalysisLoading } from "@/components/AnalysisLoading";
@@ -13,7 +14,7 @@ import { NewsList } from "@/components/NewsList";
 import { PriceChart } from "@/components/PriceChart";
 import { ReportSections } from "@/components/ReportSections";
 import { VerdictBanner } from "@/components/VerdictBanner";
-import { useAnalyzeQuery } from "@/lib/queries";
+import { useAnalyzeQuery, useVerdict } from "@/lib/queries";
 
 export default function TickerPage({
   params,
@@ -23,10 +24,19 @@ export default function TickerPage({
   const { symbol: raw } = use(params);
   const symbol = decodeURIComponent(raw).toUpperCase();
 
-  const analyze = useAnalyzeQuery(symbol);
+  // `?v=<id>` opens a specific historical verdict without re-running analysis.
+  const searchParams = useSearchParams();
+  const verdictIdParam = searchParams.get("v");
+  const verdictId = verdictIdParam ? Number(verdictIdParam) : null;
+  const historical = verdictId !== null && Number.isFinite(verdictId);
+
+  const analyze = useAnalyzeQuery(historical ? null : symbol);
+  const historicalVerdict = useVerdict(historical ? verdictId : null);
+
   // useDeepenVerdict writes the upgraded verdict into qk.analyze(symbol), so
   // analyze.data reflects the deeper model/confidence after a successful deepen.
-  const verdict = analyze.data;
+  const active = historical ? historicalVerdict : analyze;
+  const verdict = active.data;
 
   return (
     <main className="container mx-auto max-w-6xl space-y-6 p-6">
@@ -42,16 +52,26 @@ export default function TickerPage({
         </h1>
       </div>
 
-      {analyze.isLoading && !verdict && <AnalysisLoading ticker={symbol} />}
+      {active.isLoading && !verdict && (
+        historical ? (
+          <p className="rounded-lg border bg-white p-4 text-sm text-slate-500">
+            Loading verdict…
+          </p>
+        ) : (
+          <AnalysisLoading ticker={symbol} />
+        )
+      )}
 
-      {analyze.isError && (
+      {active.isError && (
         <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-          {analyze.error instanceof Error
-            ? analyze.error.message
-            : "Analysis failed."}
+          {active.error instanceof Error
+            ? active.error.message
+            : historical
+              ? "Failed to load verdict."
+              : "Analysis failed."}
           <button
             type="button"
-            onClick={() => analyze.refetch()}
+            onClick={() => active.refetch()}
             className="ml-3 rounded border border-red-300 bg-white px-2 py-0.5 text-xs font-medium text-red-700 hover:bg-red-100"
           >
             Retry
@@ -61,6 +81,21 @@ export default function TickerPage({
 
       {verdict && (
         <>
+          {historical && (
+            <div className="flex items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-900">
+              <span>
+                Viewing saved verdict from{" "}
+                {new Date(verdict.created_at).toLocaleString()}.
+              </span>
+              <Link
+                href={`/ticker/${symbol}`}
+                className="rounded border border-amber-300 bg-white px-2 py-0.5 text-xs font-medium hover:bg-amber-100"
+              >
+                Run new analysis
+              </Link>
+            </div>
+          )}
+
           <VerdictBanner verdict={verdict} />
 
           <ExecuteOrderButton verdict={verdict} />
