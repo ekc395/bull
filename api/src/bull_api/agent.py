@@ -41,6 +41,10 @@ PRICE_TAIL_BARS = 60
 MAX_TOKENS = 4096
 
 
+class InsufficientCreditsError(Exception):
+    """Anthropic returned a credit-balance-too-low error. Routers map this to HTTP 402."""
+
+
 def _prices_to_records(df: pd.DataFrame, tail: int = PRICE_TAIL_BARS) -> list[dict[str, Any]]:
     """OHLCV DataFrame → list of dicts, last `tail` bars only."""
     records: list[dict[str, Any]] = []
@@ -160,29 +164,37 @@ async def analyze_ticker(
     # caches the longest prefix it can, even if either piece is below the
     # per-block token threshold on its own.
     cached_tool = {**SUBMIT_VERDICT_TOOL, "cache_control": {"type": "ephemeral"}}
-    response = await client.messages.create(
-        model=settings.bull_model,
-        max_tokens=MAX_TOKENS,
-        system=[
-            {
-                "type": "text",
-                "text": SYSTEM_PROMPT,
-                "cache_control": {"type": "ephemeral"},
-            }
-        ],
-        tools=[cached_tool],
-        tool_choice={"type": "tool", "name": "submit_verdict"},
-        messages=[
-            {
-                "role": "user",
-                "content": (
-                    f"Facts bundle for {ticker} as of {facts['as_of']}:\n\n"
-                    f"```json\n{json.dumps(facts, indent=2, default=str)}\n```\n\n"
-                    "Produce the verdict via submit_verdict."
-                ),
-            }
-        ],
-    )
+    try:
+        response = await client.messages.create(
+            model=settings.bull_model,
+            max_tokens=MAX_TOKENS,
+            system=[
+                {
+                    "type": "text",
+                    "text": SYSTEM_PROMPT,
+                    "cache_control": {"type": "ephemeral"},
+                }
+            ],
+            tools=[cached_tool],
+            tool_choice={"type": "tool", "name": "submit_verdict"},
+            messages=[
+                {
+                    "role": "user",
+                    "content": (
+                        f"Facts bundle for {ticker} as of {facts['as_of']}:\n\n"
+                        f"```json\n{json.dumps(facts, indent=2, default=str)}\n```\n\n"
+                        "Produce the verdict via submit_verdict."
+                    ),
+                }
+            ],
+        )
+    except anthropic.BadRequestError as e:
+        if "credit balance" in str(e).lower():
+            raise InsufficientCreditsError(
+                "Insufficient Anthropic API credits. Add credits at "
+                "console.anthropic.com to continue."
+            ) from e
+        raise
 
     payload = _extract_verdict_payload(response)
 

@@ -5,7 +5,7 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..agent import analyze_ticker
+from ..agent import InsufficientCreditsError, analyze_ticker
 from ..db import get_session
 from ..schemas import (
     ScreenerCandidate,
@@ -77,6 +77,8 @@ async def run(
             continue
         try:
             verdict = await analyze_ticker(ticker, session)
+        except InsufficientCreditsError as e:
+            raise HTTPException(status_code=402, detail=str(e)) from e
         except Exception as e:
             logger.warning("screener analysis failed for %s: %s", ticker, e)
             errors.append(f"{ticker}: {e}")

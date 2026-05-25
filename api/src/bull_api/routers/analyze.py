@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..agent import analyze_ticker
+from ..agent import InsufficientCreditsError, analyze_ticker
 from ..db import SessionLocal, get_session
 from ..maintenance import prune_old_verdicts
 from ..schemas import AnalyzeRequest, VerdictResponse
@@ -67,6 +67,8 @@ async def analyze(req: AnalyzeRequest, session: AsyncSession = Depends(get_sessi
         raise HTTPException(status_code=400, detail="ticker is required")
     try:
         verdict = await analyze_ticker(req.ticker, session, force=req.force)
+    except InsufficientCreditsError as e:
+        raise HTTPException(status_code=402, detail=str(e)) from e
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e)) from e
     asyncio.create_task(_score_in_background())
