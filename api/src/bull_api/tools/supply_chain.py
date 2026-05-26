@@ -1,16 +1,17 @@
 """Supply-chain context for a ticker.
 
-- `data/supply_chain.yaml` holds a curated map for well-known tickers (NVDA → TSMC, etc.).
-- For tickers not in the yaml, queries Google News RSS for "{ticker} suppliers/customers".
+- `data/supply_chain.yaml` holds a curated override map for tickers where we
+  don't want to rely on model recall (recent IPOs, ticker collisions, pivots).
+- For tickers not in the yaml, returns an empty bundle. The synthesis prompt
+  authorizes the model to fill structural facts (suppliers, customers,
+  geopolitical/market-structure dependencies) from its own training knowledge.
 - 7d TTL cache.
 """
 
 import time
 from pathlib import Path
 from typing import Any, TypedDict
-from urllib.parse import quote_plus
 
-import feedparser
 import yaml
 
 
@@ -36,23 +37,12 @@ def _load_yaml() -> dict[str, Any]:
     return _yaml_data
 
 
-def _from_rss(ticker: str) -> SupplyChainContext:
-    """Fallback for tickers not in the yaml: scrape headline snippets from
-    Google News for supplier/customer mentions. Returns notes only — RSS
-    can't reliably populate structured supplier/customer lists.
-    """
-    notes: list[str] = []
-    for query in (f"{ticker} suppliers", f"{ticker} customers"):
-        url = f"https://news.google.com/rss/search?q={quote_plus(query)}&hl=en-US&gl=US&ceid=US:en"
-        try:
-            feed = feedparser.parse(url)
-        except Exception:
-            continue
-        for entry in feed.entries[:5]:
-            title = entry.get("title") or ""
-            if title:
-                notes.append(title)
-    return {"suppliers": [], "customers": [], "dependencies": [], "notes": notes[:10]}
+_EMPTY: SupplyChainContext = {
+    "suppliers": [],
+    "customers": [],
+    "dependencies": [],
+    "notes": [],
+}
 
 
 def get_supply_chain_context(ticker: str) -> SupplyChainContext:
@@ -72,7 +62,7 @@ def get_supply_chain_context(ticker: str) -> SupplyChainContext:
             "notes": entry.get("notes") or [],
         }
     else:
-        result = _from_rss(ticker)
+        result = dict(_EMPTY)  # type: ignore[assignment]
 
     _cache[key] = (now, result)
     return result
