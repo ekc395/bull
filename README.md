@@ -2,14 +2,11 @@
 
 Swing trading agent powered by Claude. Enter a ticker → the agent fetches price history, indicators, support/resistance, fundamentals, recent news, and market context, then synthesizes a **BUY / HOLD / SELL** verdict with a structured report. Verdicts can be executed as paper trades through Alpaca and tracked over time.
 
-Also includes an **S&P 500 screener**: a free deterministic pre-filter narrows ~500 names down to ~10–30 candidates, then runs Opus on the user-confirmed subset.
-
 > Not financial advice. For research and educational use only.
 
 ## What it does
 
 - **Single-ticker analysis** (`/ticker/[symbol]`) — paste a ticker, get a verdict and full report. Inputs: RSI / MACD / SMAs / ATR, deterministic support/resistance from pivots, fundamentals (P/E, margins, growth, signed `days_until_earnings`, analyst targets), 7-day news, and market context (SPY trend, sector ETF trend, VIX state).
-- **S&P 500 screener** (`/screener`) — free deterministic pre-filter for clean BUY-setup candidates. Estimated cost is shown before any LLM spend; you pick which survivors to analyze.
 - **Structural-thesis reasoning on every analysis** — Claude reasons from its own training knowledge about industry supply/demand, market-structure moat, geopolitical positioning, and multi-quarter catalysts. A strong structural read can lift confidence past short-term technicals, but hard gates (broken sector trend, earnings ≤7 days out, VIX "high") still apply.
 - **Verdict caching** — keyed by `(ticker, ET trading day)`. Same ticker on the same NYSE session returns the cached row, no LLM call. Bypass with `force=true`.
 - **Paper trading via Alpaca** — `paper=True` is hardcoded; there is no path that constructs a live client. Position sizing defaults to 2% of equity (`BULL_POSITION_SIZE_PCT`).
@@ -85,7 +82,7 @@ The only paid surface is the Anthropic API. Everything else (yfinance, Google Ne
 | `claude-sonnet-4-6`           | $0.02 – $0.03           |
 | `claude-haiku-4-5-20251001`   | $0.005 – $0.01          |
 
-Switch models via the `BULL_MODEL` env var. The S&P 500 screener shows an upfront cost estimate before running, and same-day re-analyses of a ticker hit the verdict cache for free.
+Switch models via the `BULL_MODEL` env var. Same-day re-analyses of a ticker hit the verdict cache for free.
 
 ## Tests
 
@@ -105,12 +102,11 @@ api/                            FastAPI backend
     tools/                      prices, indicators, support_resistance,
                                 fundamentals, news, supply_chain, market_context
     routers/                    analyze, prices, verdicts, broker, history,
-                                news, scores, screener
-    screener/                   S&P 500 pre-filter, scan, cost estimation
+                                news, scores
     broker/alpaca.py            paper-trading wrapper (paper=True hardcoded)
   alembic/                      migrations
 web/                            Next.js frontend
-  src/app/                      App Router pages — dashboard, ticker, screener
+  src/app/                      App Router pages — dashboard, ticker
   src/components/               chart, verdict banner, indicator table, etc.
 ```
 
