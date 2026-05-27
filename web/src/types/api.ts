@@ -134,36 +134,3 @@ export interface NewsResponse {
   items: NewsItem[];
 }
 
-// Screener — POST /screener/preview, POST /screener/run
-
-export interface ScreenerCandidate {
-  symbol: string;
-  company_name: string;
-  sector: string;
-  close: number;
-  rsi_14: number;
-  macd_hist: number;
-  sma_50: number;
-  sma_200: number;
-  volume_current: number;
-  volume_20d_avg: number;
-}
-
-export interface ScreenerPreviewResponse {
-  candidates: ScreenerCandidate[];
-  universe_size: number;
-  filtered_out: number;
-  overflowed: boolean;
-  estimated_cost_usd: number;
-  model: string;
-  errors: string[];
-}
-
-export interface ScreenerRunRequest {
-  tickers: string[];
-}
-
-export interface ScreenerRunResponse {
-  verdicts: VerdictResponse[];
-  errors: string[];
-}

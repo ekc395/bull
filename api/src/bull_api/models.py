@@ -53,15 +53,6 @@ class Ticker(Base):
     last_analyzed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
-class SP500Constituent(Base):
-    __tablename__ = "sp500_constituents"
-
-    symbol: Mapped[str] = mapped_column(String(16), primary_key=True)
-    company_name: Mapped[str] = mapped_column(String(128))
-    sector: Mapped[str] = mapped_column(String(64))
-    refreshed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
-
-
 class VerdictScore(Base):
     """Realized-return score for a past verdict at a fixed trading-day horizon.
 
