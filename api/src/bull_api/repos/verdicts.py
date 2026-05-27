@@ -9,13 +9,20 @@ from ..models import Verdict
 from ..time import trading_day_bounds
 
 
-async def get_for_today(ticker: str, on: date, session: AsyncSession) -> Verdict | None:
-    """Most recent Verdict for `ticker` whose trading day is `on` (US/Eastern)."""
+async def get_for_today(
+    ticker: str, on: date, session: AsyncSession, *, timeframe: str = "medium"
+) -> Verdict | None:
+    """Most recent Verdict for `(ticker, timeframe)` whose trading day is `on` (US/Eastern).
+
+    Same ticker on the same NYSE session under a different holding period is a
+    cache miss — each timeframe gets its own daily slot.
+    """
     start, end = trading_day_bounds(on)
     stmt = (
         select(Verdict)
         .where(
             Verdict.ticker == ticker.upper(),
+            Verdict.timeframe == timeframe,
             Verdict.created_at >= start,
             Verdict.created_at < end,
         )

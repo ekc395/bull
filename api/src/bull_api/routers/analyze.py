@@ -66,7 +66,9 @@ async def analyze(req: AnalyzeRequest, session: AsyncSession = Depends(get_sessi
     if not req.ticker.strip():
         raise HTTPException(status_code=400, detail="ticker is required")
     try:
-        verdict = await analyze_ticker(req.ticker, session, force=req.force)
+        verdict = await analyze_ticker(
+            req.ticker, session, force=req.force, timeframe=req.timeframe
+        )
     except InsufficientCreditsError as e:
         raise HTTPException(status_code=402, detail=str(e)) from e
     except ValueError as e:

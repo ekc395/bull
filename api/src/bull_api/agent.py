@@ -19,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from .checks import validate_verdict
 from .config import settings
 from .models import Verdict
-from .prompts import SYSTEM_PROMPT
+from .prompts import SYSTEM_PROMPT_BASE, for_timeframe
 from .repos import verdicts as vrepo
 from .time import trading_day
 
@@ -33,19 +33,31 @@ from .tools.registry import SUBMIT_VERDICT_TOOL
 from .tools.support_resistance import find_support_resistance
 from .tools.supply_chain import get_supply_chain_context
 
-# Recent daily bars included in the facts bundle. 60 bars ≈ 3 months — enough for
-# the LLM to see the medium-term shape without bloating the context window.
-PRICE_TAIL_BARS = 60
+# Recent daily bars included in the facts bundle, by user-selected timeframe.
+# Long-horizon analyses need more history for trend/regime context; short needs
+# only the near-term shape so the context window stays compact.
+_PRICE_TAIL_BARS: dict[str, int] = {"short": 60, "medium": 250, "long": 750}
+# yfinance fetch window (calendar days). Has to be enough to yield the tail
+# above plus headroom for SMA-200 warmup on long.
+_PRICE_LOOKBACK_DAYS: dict[str, int] = {"short": 400, "medium": 400, "long": 1100}
+# Recent-news window (calendar days), by timeframe.
+_NEWS_DAYS: dict[str, int] = {"short": 7, "medium": 30, "long": 90}
+
 # 4096 leaves headroom for the report's five narrative fields + key_levels.
 # 2048 was occasionally truncating the tool call mid-JSON.
 MAX_TOKENS = 4096
+
+
+def _tf(d: dict[str, int], timeframe: str) -> int:
+    """Look up a per-timeframe window with a safe fallback to medium."""
+    return d.get(timeframe, d["medium"])
 
 
 class InsufficientCreditsError(Exception):
     """Anthropic returned a credit-balance-too-low error. Routers map this to HTTP 402."""
 
 
-def _prices_to_records(df: pd.DataFrame, tail: int = PRICE_TAIL_BARS) -> list[dict[str, Any]]:
+def _prices_to_records(df: pd.DataFrame, tail: int) -> list[dict[str, Any]]:
     """OHLCV DataFrame → list of dicts, last `tail` bars only."""
     records: list[dict[str, Any]] = []
     for ts, row in df.tail(tail).iterrows():
@@ -62,15 +74,24 @@ def _prices_to_records(df: pd.DataFrame, tail: int = PRICE_TAIL_BARS) -> list[di
     return records
 
 
-async def _build_facts_bundle(ticker: str) -> dict[str, Any]:
+async def _build_facts_bundle(ticker: str, timeframe: str) -> dict[str, Any]:
     """Parallel fetch all tool outputs. Indicators + S/R depend on prices;
     market context depends on fundamentals (needs sector/industry to pick
-    the right sector ETF)."""
+    the right sector ETF).
+
+    The `timeframe` controls how much history is fetched and how far back the
+    news window goes — short looks ~3 months / 7 days, long looks ~3 years /
+    90 days.
+    """
+    lookback_days = _tf(_PRICE_LOOKBACK_DAYS, timeframe)
+    news_days = _tf(_NEWS_DAYS, timeframe)
+    tail_bars = _tf(_PRICE_TAIL_BARS, timeframe)
+
     # Phase 1: independent fetches.
     prices_df, fundamentals, news_items, supply_chain = await asyncio.gather(
-        asyncio.to_thread(get_price_history, ticker),
+        asyncio.to_thread(get_price_history, ticker, lookback_days),
         asyncio.to_thread(get_fundamentals, ticker),
-        asyncio.to_thread(get_recent_news, ticker),
+        asyncio.to_thread(get_recent_news, ticker, news_days),
         asyncio.to_thread(get_supply_chain_context, ticker),
     )
     # Phase 2: indicators + S/R consume prices; market_context consumes sector/industry.
@@ -86,7 +107,8 @@ async def _build_facts_bundle(ticker: str) -> dict[str, Any]:
     return {
         "ticker": ticker.upper(),
         "as_of": trading_day().isoformat(),
-        "prices": _prices_to_records(prices_df),
+        "timeframe": timeframe,
+        "prices": _prices_to_records(prices_df, tail=tail_bars),
         "indicators": indicators,
         "support_resistance": sr,
         "fundamentals": fundamentals,
@@ -143,26 +165,29 @@ def _coerce_report(value: Any) -> dict[str, str]:
 
 
 async def analyze_ticker(
-    ticker: str, session: AsyncSession, *, force: bool = False
+    ticker: str, session: AsyncSession, *, force: bool = False, timeframe: str = "medium"
 ) -> Verdict:
     """Run the Opus analysis on the ticker's facts bundle.
 
-    Caching: same ticker, same ET trading day returns the cached row without
-    any LLM cost. Bypass with force=True.
+    Caching: same `(ticker, trading day, timeframe)` returns the cached row
+    without any LLM cost. Bypass with force=True. The `timeframe` controls
+    the prompt variant, the price-tail bar count, and the news-lookback days.
     """
     ticker = ticker.upper()
+    if timeframe not in _PRICE_TAIL_BARS:
+        timeframe = "medium"
 
     if not force:
-        cached = await vrepo.get_for_today(ticker, trading_day(), session)
+        cached = await vrepo.get_for_today(ticker, trading_day(), session, timeframe=timeframe)
         if cached is not None:
             return cached
 
-    facts = await _build_facts_bundle(ticker)
+    facts = await _build_facts_bundle(ticker, timeframe)
 
     client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
-    # cache_control on both the tool schema and the system prompt — the API
-    # caches the longest prefix it can, even if either piece is below the
-    # per-block token threshold on its own.
+    # cache_control on the tool schema and the base system prompt — the
+    # base is shared across timeframes so it caches; the timeframe blurb
+    # is small (~600 tokens) and appended uncached.
     cached_tool = {**SUBMIT_VERDICT_TOOL, "cache_control": {"type": "ephemeral"}}
     try:
         response = await client.messages.create(
@@ -171,9 +196,13 @@ async def analyze_ticker(
             system=[
                 {
                     "type": "text",
-                    "text": SYSTEM_PROMPT,
+                    "text": SYSTEM_PROMPT_BASE,
                     "cache_control": {"type": "ephemeral"},
-                }
+                },
+                {
+                    "type": "text",
+                    "text": for_timeframe(timeframe),
+                },
             ],
             tools=[cached_tool],
             tool_choice={"type": "tool", "name": "submit_verdict"},
@@ -181,7 +210,8 @@ async def analyze_ticker(
                 {
                     "role": "user",
                     "content": (
-                        f"Facts bundle for {ticker} as of {facts['as_of']}:\n\n"
+                        f"Facts bundle for {ticker} as of {facts['as_of']} "
+                        f"(holding period: {timeframe}):\n\n"
                         f"```json\n{json.dumps(facts, indent=2, default=str)}\n```\n\n"
                         "Produce the verdict via submit_verdict."
                     ),
@@ -223,6 +253,7 @@ async def analyze_ticker(
         report_json=_coerce_report(payload.get("report")),
         key_levels_json=key_levels,
         # created_at auto-fills via the model's now_utc default.
+        timeframe=timeframe,
         model_used=settings.bull_model,
         raw_response_json={
             "stop_reason": response.stop_reason,
