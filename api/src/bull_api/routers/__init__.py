@@ -16,4 +16,5 @@ def verdict_to_response(v: Verdict) -> VerdictResponse:
         key_levels=v.key_levels_json,  # type: ignore[arg-type]
         created_at=v.created_at,
         model_used=v.model_used,
+        timeframe=v.timeframe,  # type: ignore[arg-type]
     )

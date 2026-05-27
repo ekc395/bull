@@ -7,6 +7,10 @@ from pydantic import BaseModel, Field, PlainSerializer
 
 Action = Literal["BUY", "HOLD", "SELL"]
 
+# Holding-period the user selects in the UI. Drives the prompt variant and the
+# tool windows (price-tail bars, news-lookback days) in `agent.py`.
+Timeframe = Literal["short", "medium", "long"]
+
 
 def _utc_iso(v: datetime) -> str:
     # SQLite drops tz info on read, so DateTime(timezone=True) columns come back
@@ -54,11 +58,13 @@ class VerdictResponse(BaseModel):
     key_levels: KeyLevels
     created_at: UTCDateTime
     model_used: str
+    timeframe: Timeframe = "medium"
 
 
 class AnalyzeRequest(BaseModel):
     ticker: str
     force: bool = False
+    timeframe: Timeframe = "medium"
 
 
 class AccountResponse(BaseModel):

@@ -21,6 +21,7 @@ class Verdict(Base):
     report_json: Mapped[dict[str, Any]] = mapped_column(JSON)
     key_levels_json: Mapped[dict[str, Any]] = mapped_column(JSON)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
+    timeframe: Mapped[str] = mapped_column(String(8), default="medium")  # short | medium | long
 
     model_used: Mapped[str] = mapped_column(String(64))
     raw_response_json: Mapped[dict[str, Any]] = mapped_column(JSON)
