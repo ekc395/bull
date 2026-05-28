@@ -3,7 +3,7 @@
 from datetime import datetime, timezone
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field, PlainSerializer
+from pydantic import BaseModel, Field, PlainSerializer, model_validator
 
 Action = Literal["BUY", "HOLD", "SELL"]
 
@@ -104,5 +104,13 @@ class OrderResponse(BaseModel):
 
 class ExecuteOrderRequest(BaseModel):
     verdict_id: int
+    notional: float | None = Field(default=None, gt=0)
+    qty: float | None = Field(default=None, gt=0)
+
+    @model_validator(mode="after")
+    def _exclusive_amount(self) -> "ExecuteOrderRequest":
+        if self.notional is not None and self.qty is not None:
+            raise ValueError("Provide either notional or qty, not both")
+        return self
 
 

@@ -89,12 +89,21 @@ def get_positions() -> list[AlpacaPosition]:
     ]
 
 
-def place_order(symbol: str, side: str, notional: float) -> dict[str, Any]:
-    """Market order, DAY TIF. `notional` = dollars to deploy. Always paper."""
+def place_order(
+    symbol: str,
+    side: str,
+    notional: float | None = None,
+    qty: float | None = None,
+) -> dict[str, Any]:
+    """Market order, DAY TIF. Provide exactly one of `notional` (dollars) or
+    `qty` (shares). Always paper."""
+    if (notional is None) == (qty is None):
+        raise ValueError("Provide exactly one of notional or qty")
     side_enum = OrderSide.BUY if side.lower() == "buy" else OrderSide.SELL
     request = MarketOrderRequest(
         symbol=symbol.upper(),
         notional=notional,
+        qty=qty,
         side=side_enum,
         time_in_force=TimeInForce.DAY,
     )

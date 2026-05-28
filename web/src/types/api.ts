@@ -84,6 +84,8 @@ export interface OrderResponse {
 
 export interface ExecuteOrderRequest {
   verdict_id: number;
+  notional?: number;
+  qty?: number;
 }
 
 // Prices endpoint (chart data) — no Pydantic model on the backend; shape lives here.

@@ -96,23 +96,31 @@ async def place_order(req: ExecuteOrderRequest, session: AsyncSession = Depends(
 
     side = "buy" if verdict.action == "BUY" else "sell"
 
-    # Position sizing: notional = equity * BULL_POSITION_SIZE_PCT / 100
-    try:
-        account = await asyncio.to_thread(alpaca.get_account)
-    except RuntimeError as e:
-        raise HTTPException(status_code=503, detail=str(e)) from e
-    notional = round(account["equity"] * settings.bull_position_size_pct / 100, 2)
-    if notional <= 0:
-        raise HTTPException(status_code=400, detail=f"Computed notional ${notional} is non-positive")
+    # Amount: caller may pass either `notional` (dollars) or `qty` (shares).
+    # If neither, fall back to equity * BULL_POSITION_SIZE_PCT / 100.
+    notional: float | None = req.notional
+    qty: float | None = req.qty
+    if notional is None and qty is None:
+        try:
+            account = await asyncio.to_thread(alpaca.get_account)
+        except RuntimeError as e:
+            raise HTTPException(status_code=503, detail=str(e)) from e
+        notional = round(account["equity"] * settings.bull_position_size_pct / 100, 2)
+        if notional <= 0:
+            raise HTTPException(
+                status_code=400, detail=f"Computed notional ${notional} is non-positive"
+            )
 
-    alpaca_resp = await asyncio.to_thread(alpaca.place_order, verdict.ticker, side, notional)
+    alpaca_resp = await asyncio.to_thread(
+        alpaca.place_order, verdict.ticker, side, notional, qty
+    )
 
     order = Order(
         verdict_id=verdict.id,
         alpaca_order_id=alpaca_resp["alpaca_order_id"],
         ticker=verdict.ticker,
         side=side,
-        qty=alpaca_resp.get("qty") or None,
+        qty=alpaca_resp.get("qty") or qty,
         notional=alpaca_resp.get("notional") or notional,
         status=alpaca_resp["status"],
         submitted_at=alpaca_resp["submitted_at"] or now_utc(),
