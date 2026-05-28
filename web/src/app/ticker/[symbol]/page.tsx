@@ -4,7 +4,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { use } from "react";
+import { use, useEffect, useState } from "react";
 
 import { AnalysisLoading } from "@/components/AnalysisLoading";
 import { ExecuteOrderButton } from "@/components/ExecuteOrderButton";
@@ -35,18 +35,38 @@ export default function TickerPage({
   const historical = verdictId !== null && Number.isFinite(verdictId);
 
   const [storedTimeframe, setStoredTimeframe] = useTimeframe();
-  // URL `?tf=` wins for shareability; fall back to the localStorage default.
+  // URL `?tf=` is the source of truth for which verdict is *displayed*. The
+  // toggle is a separate picker that captures the user's intent for the
+  // *next* analysis — toggling it must not re-fire /analyze. Only the
+  // "Run new analysis" button (and the dashboard's Analyze button) write
+  // the URL, which re-keys the query.
   const urlTimeframe = searchParams.get("tf");
-  const timeframe = coerceTimeframe(urlTimeframe, storedTimeframe);
+  const displayedTimeframe = coerceTimeframe(urlTimeframe, storedTimeframe);
+  const [selectedTimeframe, setSelectedTimeframe] =
+    useState<Timeframe>(displayedTimeframe);
+
+  // Keep the picker synced with the URL on external navigations (back/forward,
+  // historical → fresh, "Run new analysis"). Local toggle clicks still win
+  // while the URL hasn't changed.
+  useEffect(() => {
+    setSelectedTimeframe(displayedTimeframe);
+  }, [displayedTimeframe]);
 
   function onChangeTimeframe(next: Timeframe) {
+    setSelectedTimeframe(next);
     setStoredTimeframe(next);
-    const params = new URLSearchParams(searchParams.toString());
-    params.set("tf", next);
-    router.replace(`${pathname}?${params.toString()}`);
   }
 
-  const analyze = useAnalyzeQuery(historical ? null : symbol, timeframe);
+  function runNewAnalysis() {
+    const next = new URLSearchParams(searchParams.toString());
+    next.delete("v");
+    next.set("tf", selectedTimeframe);
+    router.replace(`${pathname}?${next.toString()}`);
+  }
+
+  const pendingChange = !historical && selectedTimeframe !== displayedTimeframe;
+
+  const analyze = useAnalyzeQuery(historical ? null : symbol, displayedTimeframe);
   const historicalVerdict = useVerdict(historical ? verdictId : null);
 
   const active = historical ? historicalVerdict : analyze;
@@ -63,7 +83,22 @@ export default function TickerPage({
         </Link>
         <div className="flex items-center gap-3">
           {!historical && (
-            <TimeframeToggle value={timeframe} onChange={onChangeTimeframe} compact />
+            <>
+              <TimeframeToggle
+                value={selectedTimeframe}
+                onChange={onChangeTimeframe}
+                compact
+              />
+              {pendingChange && (
+                <button
+                  type="button"
+                  onClick={runNewAnalysis}
+                  className="rounded-md bg-slate-900 px-3 py-1 text-xs font-semibold text-white shadow-sm hover:bg-slate-800"
+                >
+                  Run new analysis
+                </button>
+              )}
+            </>
           )}
           <h1 className="font-mono text-2xl font-semibold tracking-tight">
             {symbol}
@@ -106,12 +141,13 @@ export default function TickerPage({
                 Viewing saved verdict from{" "}
                 {new Date(verdict.created_at).toLocaleString()}.
               </span>
-              <Link
-                href={`/ticker/${symbol}`}
+              <button
+                type="button"
+                onClick={runNewAnalysis}
                 className="rounded border border-amber-300 bg-white px-2 py-0.5 text-xs font-medium hover:bg-amber-100"
               >
                 Run new analysis
-              </Link>
+              </button>
             </div>
           )}
 
