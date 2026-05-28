@@ -5,28 +5,32 @@ import Link from "next/link";
 import { PortfolioHero } from "@/components/PortfolioHero";
 import { PositionsTable } from "@/components/PositionsTable";
 import { TickerSearch } from "@/components/TickerSearch";
+import { TimeframeToggle } from "@/components/TimeframeToggle";
 import { TradeJournal } from "@/components/TradeJournal";
 import { useVerdicts } from "@/lib/queries";
+import { TIMEFRAME_LABELS, useTimeframe } from "@/lib/timeframe";
 
 export default function DashboardPage() {
   const verdicts = useVerdicts(20);
+  const [timeframe, setTimeframe] = useTimeframe();
 
   return (
     <main className="container mx-auto max-w-6xl space-y-8 p-6">
       <header className="space-y-1">
         <h1 className="text-3xl font-semibold tracking-tight">Bull</h1>
         <p className="text-sm text-slate-600">
-          Swing trading agent — analyze a ticker, get a BUY/HOLD/SELL verdict, paper-trade via Alpaca.
+          Trading agent — pick a holding period, get a BUY/HOLD/SELL verdict, paper-trade via Alpaca.
         </p>
       </header>
 
       <PortfolioHero />
 
       <section className="space-y-2">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-3">
           <h2 className="text-sm font-medium uppercase tracking-wide text-slate-500">Analyze</h2>
+          <TimeframeToggle value={timeframe} onChange={setTimeframe} compact />
         </div>
-        <TickerSearch />
+        <TickerSearch timeframe={timeframe} />
       </section>
 
       <PositionsTable />
@@ -67,6 +71,12 @@ export default function DashboardPage() {
                         {v.action}
                       </span>
                       <span className="font-mono font-medium">{v.ticker}</span>
+                      <span
+                        title={`Holding period: ${TIMEFRAME_LABELS[v.timeframe]}`}
+                        className="hidden rounded border border-slate-200 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-slate-500 sm:inline-block"
+                      >
+                        {TIMEFRAME_LABELS[v.timeframe]}
+                      </span>
                       <span className="text-slate-600">{v.headline}</span>
                     </div>
                     <div className="flex shrink-0 items-center gap-3 text-xs text-slate-500">

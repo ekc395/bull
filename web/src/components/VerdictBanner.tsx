@@ -1,4 +1,5 @@
 // Color-coded card: action + confidence + headline + model_used badge.
+import { TIMEFRAME_LABELS } from "@/lib/timeframe";
 import type { VerdictResponse } from "@/types/api";
 
 const ACTION_STYLES = {
@@ -44,10 +45,20 @@ export function VerdictBanner({ verdict }: { verdict: VerdictResponse }) {
           </div>
         </div>
 
-        <div className="flex shrink-0 flex-col items-end gap-1">
-          <div className="text-xs uppercase tracking-wide text-slate-500">Confidence</div>
-          <div className={`text-2xl font-semibold ${style.accent}`}>
-            {verdict.confidence}%
+        <div className="flex shrink-0 items-start gap-6">
+          <div className="flex flex-col items-end gap-1">
+            <div className="text-xs uppercase tracking-wide text-slate-500">Confidence</div>
+            <div className={`text-2xl font-semibold ${style.accent}`}>
+              {verdict.confidence}%
+            </div>
+          </div>
+          <div className="flex flex-col items-end gap-1">
+            <div className="text-xs uppercase tracking-wide text-slate-500">
+              Holding period
+            </div>
+            <div className={`text-2xl font-semibold ${style.accent}`}>
+              {TIMEFRAME_LABELS[verdict.timeframe]}
+            </div>
           </div>
         </div>
       </div>

@@ -3,7 +3,7 @@
 "use client";
 
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { use } from "react";
 
 import { AnalysisLoading } from "@/components/AnalysisLoading";
@@ -12,8 +12,11 @@ import { IndicatorTable } from "@/components/IndicatorTable";
 import { NewsList } from "@/components/NewsList";
 import { PriceChart } from "@/components/PriceChart";
 import { ReportSections } from "@/components/ReportSections";
+import { TimeframeToggle } from "@/components/TimeframeToggle";
 import { VerdictBanner } from "@/components/VerdictBanner";
 import { useAnalyzeQuery, useVerdict } from "@/lib/queries";
+import { coerceTimeframe, useTimeframe } from "@/lib/timeframe";
+import type { Timeframe } from "@/types/api";
 
 export default function TickerPage({
   params,
@@ -25,11 +28,25 @@ export default function TickerPage({
 
   // `?v=<id>` opens a specific historical verdict without re-running analysis.
   const searchParams = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
   const verdictIdParam = searchParams.get("v");
   const verdictId = verdictIdParam ? Number(verdictIdParam) : null;
   const historical = verdictId !== null && Number.isFinite(verdictId);
 
-  const analyze = useAnalyzeQuery(historical ? null : symbol);
+  const [storedTimeframe, setStoredTimeframe] = useTimeframe();
+  // URL `?tf=` wins for shareability; fall back to the localStorage default.
+  const urlTimeframe = searchParams.get("tf");
+  const timeframe = coerceTimeframe(urlTimeframe, storedTimeframe);
+
+  function onChangeTimeframe(next: Timeframe) {
+    setStoredTimeframe(next);
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("tf", next);
+    router.replace(`${pathname}?${params.toString()}`);
+  }
+
+  const analyze = useAnalyzeQuery(historical ? null : symbol, timeframe);
   const historicalVerdict = useVerdict(historical ? verdictId : null);
 
   const active = historical ? historicalVerdict : analyze;
@@ -37,16 +54,21 @@ export default function TickerPage({
 
   return (
     <main className="container mx-auto max-w-6xl space-y-6 p-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-3">
         <Link
           href="/"
           className="text-sm text-slate-500 hover:text-slate-900"
         >
           ← Dashboard
         </Link>
-        <h1 className="font-mono text-2xl font-semibold tracking-tight">
-          {symbol}
-        </h1>
+        <div className="flex items-center gap-3">
+          {!historical && (
+            <TimeframeToggle value={timeframe} onChange={onChangeTimeframe} compact />
+          )}
+          <h1 className="font-mono text-2xl font-semibold tracking-tight">
+            {symbol}
+          </h1>
+        </div>
       </div>
 
       {active.isLoading && !verdict && (

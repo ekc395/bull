@@ -2,6 +2,8 @@
 
 export type Action = "BUY" | "HOLD" | "SELL";
 
+export type Timeframe = "short" | "medium" | "long";
+
 export interface Level {
   // Only `price` is required. Backend's Level accepts both deterministic S/R
   // (touch_count, last_touch_date) and LLM-annotated key_levels (note).
@@ -34,11 +36,13 @@ export interface VerdictResponse {
   key_levels: KeyLevels;
   created_at: string;
   model_used: string;
+  timeframe: Timeframe;
 }
 
 export interface AnalyzeRequest {
   ticker: string;
   force?: boolean;
+  timeframe?: Timeframe;
 }
 
 export interface AccountResponse {

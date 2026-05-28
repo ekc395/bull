@@ -3,7 +3,9 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
-export function TickerSearch() {
+import type { Timeframe } from "@/types/api";
+
+export function TickerSearch({ timeframe }: { timeframe?: Timeframe }) {
   const router = useRouter();
   const [value, setValue] = useState("");
 
@@ -11,7 +13,8 @@ export function TickerSearch() {
     e.preventDefault();
     const sym = value.trim().toUpperCase();
     if (!sym) return;
-    router.push(`/ticker/${encodeURIComponent(sym)}`);
+    const qs = timeframe ? `?tf=${timeframe}` : "";
+    router.push(`/ticker/${encodeURIComponent(sym)}${qs}`);
   }
 
   return (

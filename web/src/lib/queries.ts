@@ -13,6 +13,7 @@ import type {
   PortfolioHistoryResponse,
   PositionResponse,
   PricesResponse,
+  Timeframe,
   VerdictResponse,
 } from "../types/api";
 
@@ -26,7 +27,8 @@ export const qk = {
   verdict: (id: number) => ["verdicts", id] as const,
   prices: (ticker: string) => ["prices", ticker.toUpperCase()] as const,
   news: (ticker: string) => ["news", ticker.toUpperCase()] as const,
-  analyze: (ticker: string) => ["analyze", ticker.toUpperCase()] as const,
+  analyze: (ticker: string, timeframe: Timeframe) =>
+    ["analyze", ticker.toUpperCase(), timeframe] as const,
   portfolioHistory: (period: PortfolioHistoryPeriod) =>
     ["portfolio-history", period] as const,
 };
@@ -107,12 +109,17 @@ export function useVerdict(id: number | null | undefined) {
 // `/analyze` is a POST, but on the ticker page we want it to behave like a query:
 // fire once on mount, share state across StrictMode remounts via the React Query cache,
 // and stay cached for the rest of the session (backend also caches by ET trading day).
-export function useAnalyzeQuery(ticker: string | null | undefined) {
+// `timeframe` is part of the key so toggling between short/medium/long doesn't replay
+// the same analysis under a different lens — each timeframe gets its own slot.
+export function useAnalyzeQuery(
+  ticker: string | null | undefined,
+  timeframe: Timeframe = "medium",
+) {
   const qc = useQueryClient();
   return useQuery({
-    queryKey: ticker ? qk.analyze(ticker) : ["analyze", "_none"],
+    queryKey: ticker ? qk.analyze(ticker, timeframe) : ["analyze", "_none"],
     queryFn: async () => {
-      const verdict = await apiPost<VerdictResponse>("/analyze", { ticker });
+      const verdict = await apiPost<VerdictResponse>("/analyze", { ticker, timeframe });
       qc.setQueryData(qk.verdict(verdict.id), verdict);
       qc.invalidateQueries({ queryKey: qk.verdicts });
       return verdict;
