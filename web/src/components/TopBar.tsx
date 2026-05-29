@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
@@ -26,8 +27,16 @@ export function TopBar() {
       <div className="mx-auto flex h-full max-w-[1440px] items-center gap-6 px-4">
         <Link
           href="/"
-          className="text-base font-bold tracking-tight text-primary hover:text-accent"
+          className="flex items-center gap-2 text-base font-bold tracking-tight text-primary hover:text-accent"
         >
+          <Image
+            src="/logo.png"
+            alt=""
+            width={22}
+            height={22}
+            priority
+            className="rounded-[5px]"
+          />
           Bull
         </Link>
 
