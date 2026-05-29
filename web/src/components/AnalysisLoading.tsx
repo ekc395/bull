@@ -29,12 +29,12 @@ export function AnalysisLoading({ ticker }: { ticker: string }) {
   }, [step]);
 
   return (
-    <div className="rounded-lg border bg-white p-6">
-      <div className="flex items-center gap-2 text-sm text-slate-600">
-        <Loader2 className="h-4 w-4 animate-spin text-slate-500" aria-hidden />
+    <div className="rounded-md border border-border bg-panel p-6">
+      <div className="flex items-center gap-2 text-sm text-secondary">
+        <Loader2 className="h-4 w-4 animate-spin text-accent" aria-hidden />
         <span>Analyzing {ticker}… this typically takes 15–30 seconds.</span>
       </div>
-      <div className="mt-2 pl-6 text-xs text-slate-500">{PHASES[step]}</div>
+      <div className="mt-2 pl-6 text-xs text-muted">{PHASES[step]}</div>
     </div>
   );
 }

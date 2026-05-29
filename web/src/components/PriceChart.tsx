@@ -20,12 +20,13 @@ import type { PriceBar } from "@/types/api";
 
 export interface PriceChartProps {
   ticker: string;
+  height?: number;
 }
 
 const SMA_OVERLAYS = [
-  { period: 20, color: "#f97316", title: "SMA 20" },
-  { period: 50, color: "#2563eb", title: "SMA 50" },
-  { period: 200, color: "#7c3aed", title: "SMA 200" },
+  { period: 20, color: "#f59e0b", title: "SMA 20" },
+  { period: 50, color: "#60a5fa", title: "SMA 50" },
+  { period: 200, color: "#a78bfa", title: "SMA 200" },
 ];
 
 function rollingSma(bars: PriceBar[], period: number) {
@@ -42,7 +43,7 @@ function rollingSma(bars: PriceBar[], period: number) {
   return out;
 }
 
-export function PriceChart({ ticker }: PriceChartProps) {
+export function PriceChart({ ticker, height = 560 }: PriceChartProps) {
   const prices = usePrices(ticker);
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -50,27 +51,26 @@ export function PriceChart({ ticker }: PriceChartProps) {
   const smaRefs = useRef<ISeriesApi<"Line">[]>([]);
   const priceLinesRef = useRef<IPriceLine[]>([]);
 
-  // Create chart once.
   useEffect(() => {
     if (!containerRef.current) return;
     const chart = createChart(containerRef.current, {
       autoSize: true,
-      layout: { background: { color: "#ffffff" }, textColor: "#334155" },
+      layout: { background: { color: "#000000" }, textColor: "#d1d4dc" },
       grid: {
-        vertLines: { color: "#f1f5f9" },
-        horzLines: { color: "#f1f5f9" },
+        vertLines: { color: "#1f1f1f" },
+        horzLines: { color: "#1f1f1f" },
       },
-      rightPriceScale: { borderColor: "#e2e8f0" },
-      timeScale: { borderColor: "#e2e8f0", timeVisible: false },
+      rightPriceScale: { borderColor: "#1f1f1f" },
+      timeScale: { borderColor: "#1f1f1f", timeVisible: false },
       crosshair: { mode: CrosshairMode.Normal },
     });
     chartRef.current = chart;
     candleRef.current = chart.addCandlestickSeries({
-      upColor: "#10b981",
-      downColor: "#ef4444",
+      upColor: "#26a69a",
+      downColor: "#ef5350",
       borderVisible: false,
-      wickUpColor: "#10b981",
-      wickDownColor: "#ef4444",
+      wickUpColor: "#26a69a",
+      wickDownColor: "#ef5350",
     });
     smaRefs.current = SMA_OVERLAYS.map((s) =>
       chart.addLineSeries({
@@ -90,7 +90,6 @@ export function PriceChart({ ticker }: PriceChartProps) {
     };
   }, []);
 
-  // Push data + S/R lines whenever the prices payload changes.
   useEffect(() => {
     const chart = chartRef.current;
     const candle = candleRef.current;
@@ -117,7 +116,7 @@ export function PriceChart({ ticker }: PriceChartProps) {
       priceLinesRef.current.push(
         candle.createPriceLine({
           price: lvl.price,
-          color: "#10b981",
+          color: "#26a69a",
           lineWidth: 1,
           lineStyle: LineStyle.Dashed,
           axisLabelVisible: true,
@@ -129,7 +128,7 @@ export function PriceChart({ ticker }: PriceChartProps) {
       priceLinesRef.current.push(
         candle.createPriceLine({
           price: lvl.price,
-          color: "#ef4444",
+          color: "#ef5350",
           lineWidth: 1,
           lineStyle: LineStyle.Dashed,
           axisLabelVisible: true,
@@ -143,14 +142,18 @@ export function PriceChart({ ticker }: PriceChartProps) {
 
   return (
     <div className="relative">
-      <div ref={containerRef} className="h-[500px] w-full rounded border bg-white" />
+      <div
+        ref={containerRef}
+        style={{ height: `${height}px` }}
+        className="w-full rounded-md border border-border bg-app"
+      />
       {prices.isLoading && (
-        <div className="absolute inset-0 flex items-center justify-center text-sm text-slate-500">
+        <div className="absolute inset-0 flex items-center justify-center text-sm text-muted">
           Loading chart…
         </div>
       )}
       {prices.isError && (
-        <div className="absolute inset-0 flex items-center justify-center text-sm text-red-600">
+        <div className="absolute inset-0 flex items-center justify-center text-sm text-bear">
           Failed to load price history.
         </div>
       )}

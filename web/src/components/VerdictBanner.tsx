@@ -1,74 +1,55 @@
-// Color-coded card: action + confidence + headline + model_used badge.
+// Condensed verdict card sized for the Overview sidebar.
 import { TIMEFRAME_LABELS } from "@/lib/timeframe";
+import { cn } from "@/lib/utils";
 import type { VerdictResponse } from "@/types/api";
 
-const ACTION_STYLES = {
-  BUY: {
-    container: "border-emerald-200 bg-emerald-50",
-    pill: "bg-emerald-600 text-white",
-    accent: "text-emerald-800",
-  },
-  SELL: {
-    container: "border-rose-200 bg-rose-50",
-    pill: "bg-rose-600 text-white",
-    accent: "text-rose-800",
-  },
-  HOLD: {
-    container: "border-slate-200 bg-slate-50",
-    pill: "bg-slate-700 text-white",
-    accent: "text-slate-800",
-  },
-} as const;
+const ACTION_STYLES: Record<
+  "BUY" | "HOLD" | "SELL",
+  { pill: string; accent: string }
+> = {
+  BUY: { pill: "bg-bull text-white", accent: "text-bull" },
+  SELL: { pill: "bg-bear text-white", accent: "text-bear" },
+  HOLD: { pill: "bg-elevated text-primary", accent: "text-secondary" },
+};
 
 export function VerdictBanner({ verdict }: { verdict: VerdictResponse }) {
   const style = ACTION_STYLES[verdict.action];
   const createdAt = new Date(verdict.created_at);
 
   return (
-    <section className={`rounded-lg border p-5 ${style.container}`}>
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="flex items-center gap-4">
-          <span
-            className={`inline-flex h-14 w-20 items-center justify-center rounded-md text-xl font-bold tracking-wide ${style.pill}`}
-          >
-            {verdict.action}
-          </span>
-          <div className="space-y-1">
-            <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-slate-500">
-              <span className="font-mono">{verdict.ticker}</span>
-              <span>·</span>
-              <span>{createdAt.toLocaleString()}</span>
-            </div>
-            <h2 className={`text-lg font-semibold leading-snug ${style.accent}`}>
-              {verdict.headline}
-            </h2>
-          </div>
-        </div>
-
-        <div className="flex shrink-0 items-start gap-6">
-          <div className="flex flex-col items-end gap-1">
-            <div className="text-xs uppercase tracking-wide text-slate-500">Confidence</div>
-            <div className={`text-2xl font-semibold ${style.accent}`}>
-              {verdict.confidence}%
-            </div>
-          </div>
-          <div className="flex flex-col items-end gap-1">
-            <div className="text-xs uppercase tracking-wide text-slate-500">
-              Holding period
-            </div>
-            <div className={`text-2xl font-semibold ${style.accent}`}>
-              {TIMEFRAME_LABELS[verdict.timeframe]}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div className="mt-4 flex flex-wrap items-center gap-2 text-xs text-slate-500">
-        <span className="rounded bg-white/70 px-2 py-0.5 font-mono">
-          {verdict.model_used}
+    <section className="rounded-md border border-border bg-panel p-4">
+      <div className="flex items-center justify-between gap-3">
+        <span
+          className={cn(
+            "inline-flex h-7 items-center rounded px-2.5 text-xs font-bold tracking-wide",
+            style.pill,
+          )}
+        >
+          {verdict.action}
         </span>
-        <span className="ml-auto italic">Not financial advice.</span>
+        <span className={cn("text-2xl font-semibold tabular-nums", style.accent)}>
+          {verdict.confidence}%
+        </span>
       </div>
+
+      <h2 className="mt-3 text-sm font-semibold leading-snug text-primary">
+        {verdict.headline}
+      </h2>
+
+      <dl className="mt-3 grid grid-cols-2 gap-y-1.5 text-xs">
+        <dt className="text-muted">Holding period</dt>
+        <dd className="text-right text-primary">
+          {TIMEFRAME_LABELS[verdict.timeframe]}
+        </dd>
+        <dt className="text-muted">Model</dt>
+        <dd className="text-right font-mono text-primary">
+          {verdict.model_used}
+        </dd>
+        <dt className="text-muted">Generated</dt>
+        <dd className="text-right text-primary">
+          {createdAt.toLocaleString()}
+        </dd>
+      </dl>
     </section>
   );
 }
