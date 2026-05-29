@@ -1,22 +1,25 @@
 // Per-ticker analysis view. Fires /analyze on mount (backend caches by ET trading day),
-// then renders the verdict banner, report sections, and news list.
+// then renders the symbol header, tabbed content, and trade execution.
 "use client";
 
-import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { use, useEffect, useState } from "react";
 
 import { AnalysisLoading } from "@/components/AnalysisLoading";
 import { ExecuteOrderButton } from "@/components/ExecuteOrderButton";
 import { IndicatorTable } from "@/components/IndicatorTable";
+import { KeyLevelsMini } from "@/components/KeyLevelsMini";
+import { KeyStatsGrid } from "@/components/KeyStatsGrid";
 import { NewsList } from "@/components/NewsList";
 import { PriceChart } from "@/components/PriceChart";
-import { ReportSections } from "@/components/ReportSections";
+import { KeyLevelsPanel, ReportSections } from "@/components/ReportSections";
+import { SymbolHeader } from "@/components/SymbolHeader";
+import { SymbolTabs } from "@/components/SymbolTabs";
 import { TimeframeToggle } from "@/components/TimeframeToggle";
 import { VerdictBanner } from "@/components/VerdictBanner";
 import { useAnalyzeQuery, useVerdict } from "@/lib/queries";
 import { coerceTimeframe, useTimeframe } from "@/lib/timeframe";
-import type { Timeframe } from "@/types/api";
+import type { Timeframe, VerdictResponse } from "@/types/api";
 
 export default function TickerPage({
   params,
@@ -26,7 +29,6 @@ export default function TickerPage({
   const { symbol: raw } = use(params);
   const symbol = decodeURIComponent(raw).toUpperCase();
 
-  // `?v=<id>` opens a specific historical verdict without re-running analysis.
   const searchParams = useSearchParams();
   const router = useRouter();
   const pathname = usePathname();
@@ -35,19 +37,11 @@ export default function TickerPage({
   const historical = verdictId !== null && Number.isFinite(verdictId);
 
   const [storedTimeframe, setStoredTimeframe] = useTimeframe();
-  // URL `?tf=` is the source of truth for which verdict is *displayed*. The
-  // toggle is a separate picker that captures the user's intent for the
-  // *next* analysis — toggling it must not re-fire /analyze. Only the
-  // "Run new analysis" button (and the dashboard's Analyze button) write
-  // the URL, which re-keys the query.
   const urlTimeframe = searchParams.get("tf");
   const displayedTimeframe = coerceTimeframe(urlTimeframe, storedTimeframe);
   const [selectedTimeframe, setSelectedTimeframe] =
     useState<Timeframe>(displayedTimeframe);
 
-  // Keep the picker synced with the URL on external navigations (back/forward,
-  // historical → fresh, "Run new analysis"). Local toggle clicks still win
-  // while the URL hasn't changed.
   useEffect(() => {
     setSelectedTimeframe(displayedTimeframe);
   }, [displayedTimeframe]);
@@ -72,43 +66,34 @@ export default function TickerPage({
   const active = historical ? historicalVerdict : analyze;
   const verdict = active.data;
 
-  return (
-    <main className="container mx-auto max-w-6xl space-y-6 p-6">
-      <div className="flex items-center justify-between gap-3">
-        <Link
-          href="/"
-          className="text-sm text-slate-500 hover:text-slate-900"
+  const headerActions = (
+    <>
+      {!historical && (
+        <TimeframeToggle
+          value={selectedTimeframe}
+          onChange={onChangeTimeframe}
+          compact
+        />
+      )}
+      {(pendingChange || historical) && (
+        <button
+          type="button"
+          onClick={runNewAnalysis}
+          className="rounded-md bg-accent px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-accent-hover"
         >
-          ← Dashboard
-        </Link>
-        <div className="flex items-center gap-3">
-          {!historical && (
-            <>
-              <TimeframeToggle
-                value={selectedTimeframe}
-                onChange={onChangeTimeframe}
-                compact
-              />
-              {pendingChange && (
-                <button
-                  type="button"
-                  onClick={runNewAnalysis}
-                  className="rounded-md bg-slate-900 px-3 py-1 text-xs font-semibold text-white shadow-sm hover:bg-slate-800"
-                >
-                  Run new analysis
-                </button>
-              )}
-            </>
-          )}
-          <h1 className="font-mono text-2xl font-semibold tracking-tight">
-            {symbol}
-          </h1>
-        </div>
-      </div>
+          Run new analysis
+        </button>
+      )}
+    </>
+  );
+
+  return (
+    <div className="space-y-6">
+      <SymbolHeader ticker={symbol} verdict={verdict} right={headerActions} />
 
       {active.isLoading && !verdict && (
         historical ? (
-          <p className="rounded-lg border bg-white p-4 text-sm text-slate-500">
+          <p className="rounded-md border border-border bg-panel p-4 text-sm text-muted">
             Loading verdict…
           </p>
         ) : (
@@ -117,7 +102,7 @@ export default function TickerPage({
       )}
 
       {active.isError && (
-        <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+        <div className="rounded-md border border-bear bg-panel p-4 text-sm text-bear">
           {active.error instanceof Error
             ? active.error.message
             : historical
@@ -126,75 +111,115 @@ export default function TickerPage({
           <button
             type="button"
             onClick={() => active.refetch()}
-            className="ml-3 rounded border border-red-300 bg-white px-2 py-0.5 text-xs font-medium text-red-700 hover:bg-red-100"
+            className="ml-3 rounded border border-bear bg-panel px-2 py-0.5 text-xs font-medium hover:bg-elevated"
           >
             Retry
           </button>
         </div>
       )}
 
+      {verdict && historical && (
+        <div className="flex items-center justify-between gap-3 rounded-md border border-border bg-panel px-4 py-2 text-sm text-secondary">
+          <span>
+            <span className="text-muted">Viewing saved verdict from </span>
+            {new Date(verdict.created_at).toLocaleString()}.
+          </span>
+        </div>
+      )}
+
       {verdict && (
-        <>
-          {historical && (
-            <div className="flex items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-900">
-              <span>
-                Viewing saved verdict from{" "}
-                {new Date(verdict.created_at).toLocaleString()}.
-              </span>
-              <button
-                type="button"
-                onClick={runNewAnalysis}
-                className="rounded border border-amber-300 bg-white px-2 py-0.5 text-xs font-medium hover:bg-amber-100"
-              >
-                Run new analysis
-              </button>
-            </div>
-          )}
-
-          <VerdictBanner verdict={verdict} />
-
-          <ExecuteOrderButton verdict={verdict} />
-
-          <section className="space-y-2">
-            <h3 className="text-sm font-medium uppercase tracking-wide text-slate-500">
-              Chart
-            </h3>
-            <PriceChart ticker={symbol} />
-          </section>
-
-          <section className="space-y-2">
-            <h3 className="text-sm font-medium uppercase tracking-wide text-slate-500">
-              Indicators
-            </h3>
-            <div className="overflow-hidden rounded-lg border bg-white">
-              <IndicatorTable ticker={symbol} />
-            </div>
-          </section>
-
-          <section className="space-y-2">
-            <h3 className="text-sm font-medium uppercase tracking-wide text-slate-500">
-              Report
-            </h3>
+        <SymbolTabs
+          overview={<OverviewTab symbol={symbol} verdict={verdict} />}
+          technicals={<TechnicalsTab symbol={symbol} verdict={verdict} />}
+          report={
             <ReportSections
               report={verdict.report}
               keyLevels={verdict.key_levels}
             />
-          </section>
-
-          <section className="space-y-2">
-            <h3 className="text-sm font-medium uppercase tracking-wide text-slate-500">
-              Recent news
-            </h3>
-            <div className="rounded-lg border bg-white">
-              <NewsList ticker={symbol} />
-            </div>
-          </section>
-        </>
+          }
+          news={<NewsList ticker={symbol} />}
+        />
       )}
+    </div>
+  );
+}
 
-      <footer className="pt-4 text-xs text-slate-400">
-        Not financial advice. For research and educational use only.
-      </footer>
-    </main>
+function OverviewTab({
+  symbol,
+  verdict,
+}: {
+  symbol: string;
+  verdict: VerdictResponse;
+}) {
+  return (
+    <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
+      <div className="min-w-0 space-y-6">
+        <PriceChart ticker={symbol} height={560} />
+        <AboutCard verdict={verdict} />
+        <KeyStatsGrid ticker={symbol} />
+        <ExecuteOrderButton verdict={verdict} />
+      </div>
+      <aside className="space-y-6">
+        <VerdictBanner verdict={verdict} />
+        <KeyLevelsMini keyLevels={verdict.key_levels} />
+        <section className="rounded-md border border-border bg-panel">
+          <h3 className="border-b border-border px-4 py-2 text-[11px] font-semibold uppercase tracking-wide text-muted">
+            Top news
+          </h3>
+          <NewsList ticker={symbol} limit={3} compact />
+        </section>
+      </aside>
+    </div>
+  );
+}
+
+function TechnicalsTab({
+  symbol,
+  verdict,
+}: {
+  symbol: string;
+  verdict: VerdictResponse;
+}) {
+  return (
+    <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
+      <div className="min-w-0 space-y-6">
+        <IndicatorTable ticker={symbol} />
+      </div>
+      <aside className="space-y-6">
+        <KeyLevelsPanel keyLevels={verdict.key_levels} />
+      </aside>
+    </div>
+  );
+}
+
+function AboutCard({ verdict }: { verdict: VerdictResponse }) {
+  const [expanded, setExpanded] = useState(false);
+  const reasoning = verdict.report.reasoning ?? "";
+  const collapsedLen = 360;
+  const isLong = reasoning.length > collapsedLen;
+  const shown =
+    expanded || !isLong ? reasoning : reasoning.slice(0, collapsedLen) + "…";
+
+  return (
+    <section className="rounded-md border border-border bg-panel p-5">
+      <h3 className="text-[11px] font-semibold uppercase tracking-wide text-muted">
+        About
+      </h3>
+      <p className="mt-2 text-base font-semibold leading-snug text-primary">
+        {verdict.headline}
+      </p>
+      <p className="mt-3 whitespace-pre-wrap text-sm leading-relaxed text-secondary">
+        {shown}
+      </p>
+      {isLong && (
+        <button
+          type="button"
+          onClick={() => setExpanded((s) => !s)}
+          className="mt-2 text-xs font-medium text-accent hover:text-accent-hover"
+        >
+          {expanded ? "Show less" : "Read more"}
+        </button>
+      )}
+    </section>
   );
 }
