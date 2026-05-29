@@ -24,7 +24,7 @@ export function TickerSearch({ timeframe }: { timeframe?: Timeframe }) {
         value={value}
         onChange={(e) => setValue(e.target.value.toUpperCase())}
         placeholder="Enter ticker (e.g. NVDA)"
-        className="flex-1 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
+        className="flex-1 rounded-md border border-border bg-elevated px-3 py-2 text-sm text-primary placeholder:text-muted focus:border-accent focus:outline-none"
         maxLength={10}
         autoComplete="off"
         spellCheck={false}
@@ -32,7 +32,7 @@ export function TickerSearch({ timeframe }: { timeframe?: Timeframe }) {
       <button
         type="submit"
         disabled={!value.trim()}
-        className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+        className="rounded-md bg-accent px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
       >
         Analyze
       </button>

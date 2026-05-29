@@ -13,6 +13,7 @@ import {
 } from "lightweight-charts";
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import { cn } from "@/lib/utils";
 import { formatUsd } from "@/lib/format";
 import { useAccount, usePortfolioHistory } from "@/lib/queries";
 import type { PortfolioHistoryPeriod } from "@/types/api";
@@ -30,8 +31,6 @@ export function PortfolioHero() {
     const out: { time: UTCTimestamp; value: number }[] = [];
     for (let i = 0; i < timestamp.length; i++) {
       const v = equity[i];
-      // Alpaca returns 0 for time-of-day buckets before the session opens;
-      // dropping them keeps the chart from sagging to $0 at the left edge.
       if (v == null || v === 0) continue;
       out.push({ time: timestamp[i] as UTCTimestamp, value: v });
     }
@@ -51,22 +50,28 @@ export function PortfolioHero() {
   }, [series, account.data]);
 
   const isUp = (changeUsd ?? 0) >= 0;
-  const accent = isUp ? "#10b981" : "#ef4444";
-  const accentArea = isUp ? "rgba(16,185,129,0.15)" : "rgba(239,68,68,0.15)";
+  const accent = isUp ? "#26a69a" : "#ef5350";
+  const accentArea = isUp ? "rgba(38,166,154,0.18)" : "rgba(239,83,80,0.18)";
 
   return (
-    <section className="rounded-xl border bg-white p-6 shadow-sm">
+    <section className="rounded-md border border-border bg-panel p-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-muted">
             Portfolio value
           </p>
-          <p className="mt-1 font-mono text-4xl font-semibold tracking-tight text-slate-900">
+          <p className="mt-1 font-mono text-4xl font-semibold tracking-tight text-primary">
             {current == null ? "—" : formatUsd(current)}
           </p>
           <p
-            className="mt-1 font-mono text-sm"
-            style={{ color: changeUsd == null ? "#64748b" : accent }}
+            className={cn(
+              "mt-1 font-mono text-sm",
+              changeUsd == null
+                ? "text-muted"
+                : isUp
+                  ? "text-bull"
+                  : "text-bear",
+            )}
           >
             {changeUsd == null ? (
               "—"
@@ -80,7 +85,7 @@ export function PortfolioHero() {
                     {(changePct * 100).toFixed(2)}%)
                   </span>
                 )}
-                <span className="ml-2 text-slate-500">{period}</span>
+                <span className="ml-2 text-muted">{period}</span>
               </>
             )}
           </p>
@@ -88,10 +93,12 @@ export function PortfolioHero() {
 
         {account.data && (
           <dl className="grid grid-cols-2 gap-x-6 text-right text-xs">
-            <dt className="text-slate-500">Cash</dt>
-            <dd className="font-mono text-slate-900">{formatUsd(account.data.cash)}</dd>
-            <dt className="text-slate-500">Buying power</dt>
-            <dd className="font-mono text-slate-900">
+            <dt className="text-muted">Cash</dt>
+            <dd className="font-mono text-primary">
+              {formatUsd(account.data.cash)}
+            </dd>
+            <dt className="text-muted">Buying power</dt>
+            <dd className="font-mono text-primary">
               {formatUsd(account.data.buying_power)}
             </dd>
           </dl>
@@ -108,24 +115,24 @@ export function PortfolioHero() {
       />
 
       <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
-        <div className="flex gap-1">
+        <div className="flex gap-1 rounded-md bg-elevated p-0.5">
           {PERIODS.map((p) => (
             <button
               key={p}
               type="button"
               onClick={() => setPeriod(p)}
-              className={
-                "rounded-md px-3 py-1 text-xs font-semibold transition-colors " +
-                (p === period
-                  ? "bg-slate-900 text-white"
-                  : "bg-slate-100 text-slate-600 hover:bg-slate-200")
-              }
+              className={cn(
+                "rounded px-3 py-1 text-xs font-semibold transition-colors",
+                p === period
+                  ? "bg-input text-primary"
+                  : "text-muted hover:text-primary",
+              )}
             >
               {p}
             </button>
           ))}
         </div>
-        <span className="text-[10px] uppercase tracking-wide text-slate-400">
+        <span className="text-[10px] uppercase tracking-wide text-muted">
           Alpaca paper
         </span>
       </div>
@@ -152,12 +159,12 @@ function PortfolioChart({ data, baseline, accent, accentArea, loading, error }: 
     const chart = createChart(containerRef.current, {
       autoSize: true,
       layout: {
-        background: { type: ColorType.Solid, color: "#ffffff" },
-        textColor: "#64748b",
+        background: { type: ColorType.Solid, color: "#0f0f0f" },
+        textColor: "#787b86",
       },
       grid: {
         vertLines: { visible: false },
-        horzLines: { color: "#f1f5f9" },
+        horzLines: { color: "#1f1f1f" },
       },
       rightPriceScale: { borderVisible: false },
       timeScale: { borderVisible: false, timeVisible: true, secondsVisible: false },
@@ -185,12 +192,10 @@ function PortfolioChart({ data, baseline, accent, accentArea, loading, error }: 
     series.applyOptions({
       lineColor: accent,
       topColor: accentArea,
-      bottomColor: "rgba(255,255,255,0)",
+      bottomColor: "rgba(15,15,15,0)",
     });
     series.setData(data);
 
-    // lightweight-charts doesn't expose a list-price-lines API, so we stash the
-    // last one on the series object and remove it before re-adding on update.
     const holder = series as unknown as {
       __baselineLine?: ReturnType<typeof series.createPriceLine>;
     };
@@ -205,7 +210,7 @@ function PortfolioChart({ data, baseline, accent, accentArea, loading, error }: 
     if (baseline != null && data.length > 1) {
       holder.__baselineLine = series.createPriceLine({
         price: baseline,
-        color: "#cbd5e1",
+        color: "#2e2e2e",
         lineWidth: 1,
         lineStyle: LineStyle.Dashed,
         axisLabelVisible: false,
@@ -220,12 +225,12 @@ function PortfolioChart({ data, baseline, accent, accentArea, loading, error }: 
     <div className="relative mt-4">
       <div ref={containerRef} className="h-[220px] w-full" />
       {loading && (
-        <div className="absolute inset-0 flex items-center justify-center text-sm text-slate-500">
+        <div className="absolute inset-0 flex items-center justify-center text-sm text-muted">
           Loading chart…
         </div>
       )}
       {error && (
-        <div className="absolute inset-0 flex items-center justify-center text-sm text-red-600">
+        <div className="absolute inset-0 flex items-center justify-center text-sm text-bear">
           {error}
         </div>
       )}
