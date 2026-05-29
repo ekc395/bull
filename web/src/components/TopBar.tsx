@@ -27,7 +27,7 @@ export function TopBar() {
       <div className="mx-auto flex h-full max-w-[1440px] items-center gap-6 px-4">
         <Link
           href="/"
-          className="flex items-center gap-2 text-base font-bold tracking-tight text-primary hover:text-accent"
+          className="flex items-center gap-2 text-base font-bold tracking-tight text-primary"
         >
           <Image
             src="/logo.png"
@@ -41,7 +41,7 @@ export function TopBar() {
         </Link>
 
         <form onSubmit={onSubmit} className="max-w-md flex-1">
-          <label className="flex items-center gap-2 rounded-full border border-border bg-elevated px-3 py-1.5 focus-within:border-accent">
+          <label className="flex items-center gap-2 rounded-full border border-border bg-elevated px-3 py-1.5">
             <Search className="h-3.5 w-3.5 text-muted" aria-hidden />
             <input
               type="text"

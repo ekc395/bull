@@ -24,7 +24,7 @@ export function TickerSearch({ timeframe }: { timeframe?: Timeframe }) {
         value={value}
         onChange={(e) => setValue(e.target.value.toUpperCase())}
         placeholder="Enter ticker (e.g. NVDA)"
-        className="flex-1 rounded-md border border-border bg-elevated px-3 py-2 text-sm text-primary placeholder:text-muted focus:border-accent focus:outline-none"
+        className="flex-1 rounded-md border border-border bg-elevated px-3 py-2 text-sm text-primary placeholder:text-muted focus:outline-none"
         maxLength={10}
         autoComplete="off"
         spellCheck={false}
