@@ -79,7 +79,7 @@ export default function TickerPage({
         <button
           type="button"
           onClick={runNewAnalysis}
-          className="rounded-md bg-accent px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-accent-hover"
+          className="rounded-md border border-border-strong bg-elevated px-3 py-1.5 text-xs font-semibold text-primary transition-colors hover:bg-input"
         >
           Run new analysis
         </button>

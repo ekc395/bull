@@ -32,7 +32,7 @@ export function TickerSearch({ timeframe }: { timeframe?: Timeframe }) {
       <button
         type="submit"
         disabled={!value.trim()}
-        className="rounded-md bg-accent px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
+        className="rounded-md border border-border-strong bg-elevated px-4 py-2 text-sm font-semibold text-primary transition-colors hover:bg-input disabled:cursor-not-allowed disabled:opacity-50"
       >
         Analyze
       </button>
