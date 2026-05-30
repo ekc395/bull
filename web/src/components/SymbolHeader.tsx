@@ -3,6 +3,7 @@
 import type { ReactNode } from "react";
 
 import { cn } from "@/lib/utils";
+import { TickerLogo } from "@/components/TickerLogo";
 import { usePrices } from "@/lib/queries";
 import { formatUsd } from "@/lib/format";
 import type { VerdictResponse } from "@/types/api";
@@ -43,7 +44,8 @@ export function SymbolHeader({
     <section className="border-b border-border pb-5">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="space-y-2">
-          <div className="flex items-baseline gap-3">
+          <div className="flex items-center gap-3">
+            <TickerLogo ticker={ticker} size={36} />
             <h1 className="font-mono text-3xl font-bold tracking-tight text-primary">
               {ticker}
             </h1>

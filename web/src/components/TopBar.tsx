@@ -3,16 +3,24 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Search } from "lucide-react";
 
 import { formatUsd } from "@/lib/format";
+import { TickerLogo } from "@/components/TickerLogo";
 import { useAccount } from "@/lib/queries";
 
 export function TopBar() {
   const router = useRouter();
   const account = useAccount();
   const [q, setQ] = useState("");
+
+  // Debounce the live logo preview so it doesn't fire a request per keystroke.
+  const [preview, setPreview] = useState("");
+  useEffect(() => {
+    const t = setTimeout(() => setPreview(q.trim()), 300);
+    return () => clearTimeout(t);
+  }, [q]);
 
   function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -42,7 +50,11 @@ export function TopBar() {
 
         <form onSubmit={onSubmit} className="max-w-md flex-1">
           <label className="flex items-center gap-2 rounded-full border border-border bg-elevated px-3 py-1.5">
-            <Search className="h-3.5 w-3.5 text-muted" aria-hidden />
+            {preview ? (
+              <TickerLogo ticker={preview} size={18} />
+            ) : (
+              <Search className="h-3.5 w-3.5 text-muted" aria-hidden />
+            )}
             <input
               type="text"
               value={q}

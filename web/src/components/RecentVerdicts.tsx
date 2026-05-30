@@ -3,6 +3,7 @@
 import Link from "next/link";
 
 import { cn } from "@/lib/utils";
+import { TickerLogo } from "@/components/TickerLogo";
 import { useVerdicts } from "@/lib/queries";
 import { TIMEFRAME_LABELS } from "@/lib/timeframe";
 
@@ -45,6 +46,7 @@ export function RecentVerdicts({ limit = 20 }: { limit?: number }) {
               >
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex min-w-0 items-center gap-2">
+                    <TickerLogo ticker={v.ticker} size={20} />
                     <span className="font-mono text-sm font-semibold text-primary">
                       {v.ticker}
                     </span>

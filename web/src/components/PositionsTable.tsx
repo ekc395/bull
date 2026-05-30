@@ -4,6 +4,7 @@
 import Link from "next/link";
 
 import { cn } from "@/lib/utils";
+import { TickerLogo } from "@/components/TickerLogo";
 import { formatUsd } from "@/lib/format";
 import { useClosePosition, usePositions } from "@/lib/queries";
 
@@ -63,8 +64,9 @@ export function PositionsTable() {
                   <td className="px-4 py-2 font-mono font-medium text-primary">
                     <Link
                       href={`/ticker/${encodeURIComponent(p.symbol)}`}
-                      className="hover:text-accent"
+                      className="flex items-center gap-2 hover:text-accent"
                     >
+                      <TickerLogo ticker={p.symbol} size={20} />
                       {p.symbol}
                     </Link>
                   </td>
