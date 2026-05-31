@@ -70,7 +70,7 @@ export function SymbolHeader({
             </span>
             <span
               className={cn(
-                "font-mono text-base font-medium",
+                "inline-flex items-baseline font-mono text-base font-medium",
                 change == null
                   ? "text-muted"
                   : isUp
@@ -78,6 +78,11 @@ export function SymbolHeader({
                     : "text-bear",
               )}
             >
+              {change != null && (
+                <span aria-hidden className="mr-1 text-xs">
+                  {isUp ? "▲" : "▼"}
+                </span>
+              )}
               {change == null
                 ? ""
                 : `${isUp ? "+" : ""}${change.toFixed(2)}`}
