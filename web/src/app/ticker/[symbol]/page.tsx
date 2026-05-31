@@ -12,6 +12,7 @@ import { ExecuteOrderButton } from "@/components/ExecuteOrderButton";
 import { IndicatorTable } from "@/components/IndicatorTable";
 import { KeyFactsCard } from "@/components/KeyFactsCard";
 import { KeyFactsToday } from "@/components/KeyFactsToday";
+import { LatestEarningsCard } from "@/components/LatestEarningsCard";
 import { KeyLevelsMini } from "@/components/KeyLevelsMini";
 import { KeyStatsGrid } from "@/components/KeyStatsGrid";
 import { NewsList } from "@/components/NewsList";
@@ -179,6 +180,7 @@ function OverviewTab({
         <PerformanceRangeBar perf={perf} value={range} onSelect={setRange} />
         <div className="space-y-6 pt-3">
           <KeyFactsToday verdict={verdict} />
+          <LatestEarningsCard ticker={symbol} />
           <KeyFactsCard ticker={symbol} />
           <AboutCompanyCard ticker={symbol} />
           <AboutCard verdict={verdict} />

@@ -127,6 +127,16 @@ export interface PricesResponse {
   support_resistance: SupportResistance;
 }
 
+export interface LatestEarnings {
+  report_date?: string | null;
+  fiscal_period?: string | null;
+  eps_actual?: number | null;
+  eps_estimate?: number | null;
+  eps_surprise_pct?: number | null;
+  revenue_actual?: number | null;
+  revenue_estimate?: number | null;
+}
+
 // GET /fundamentals/{ticker} — mirrors Fundamentals (TypedDict, total=False) on the
 // backend, so every field beyond ticker is optional.
 export interface FundamentalsResponse {
@@ -162,6 +172,7 @@ export interface FundamentalsResponse {
   headquarters?: string | null;
   employees?: number | null;
   ipo_date?: string | null;
+  latest_earnings?: LatestEarnings | null;
   source?: string;
 }
 
