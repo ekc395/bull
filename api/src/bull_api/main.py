@@ -3,7 +3,16 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from .routers import analyze, broker, history, news, prices, scores, verdicts
+from .routers import (
+    analyze,
+    broker,
+    fundamentals,
+    history,
+    news,
+    prices,
+    scores,
+    verdicts,
+)
 
 app = FastAPI(title="Bull API", version="0.1.0")
 
@@ -17,6 +26,7 @@ app.add_middleware(
 
 app.include_router(analyze.router)
 app.include_router(prices.router)
+app.include_router(fundamentals.router)
 app.include_router(verdicts.router)
 app.include_router(broker.router)
 app.include_router(history.router)
