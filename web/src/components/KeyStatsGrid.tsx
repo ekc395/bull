@@ -36,7 +36,7 @@ export function KeyStatsGrid({ ticker }: { ticker: string }) {
   return (
     <div className="overflow-hidden rounded-md border border-border bg-panel">
       <h3 className="border-b border-border px-4 py-2 text-[11px] font-semibold uppercase tracking-wide text-muted">
-        Key stats
+        Technical snapshot
       </h3>
       <dl className="grid grid-cols-2 gap-px bg-border sm:grid-cols-3">
         {stats.map((s) => (

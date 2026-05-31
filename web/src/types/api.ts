@@ -147,6 +147,15 @@ export interface FundamentalsResponse {
   analyst_count?: number | null;
   recommendation_mean?: number | null;
   recommendation_key?: string | null;
+  beta?: number | null;
+  eps_ttm?: number | null;
+  dividend_yield?: number | null; // already in percent units (0.47 → 0.47%)
+  shares_float?: number | null;
+  shares_outstanding?: number | null;
+  net_income?: number | null;
+  total_revenue?: number | null;
+  fifty_two_week_high?: number | null;
+  fifty_two_week_low?: number | null;
   source?: string;
 }
 

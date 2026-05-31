@@ -6,9 +6,11 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { use, useEffect, useMemo, useState } from "react";
 
 import { AnalysisLoading } from "@/components/AnalysisLoading";
+import { AnalystGauge } from "@/components/AnalystGauge";
 import { ExecuteOrderButton } from "@/components/ExecuteOrderButton";
 import { IndicatorTable } from "@/components/IndicatorTable";
 import { KeyFactsCard } from "@/components/KeyFactsCard";
+import { KeyFactsToday } from "@/components/KeyFactsToday";
 import { KeyLevelsMini } from "@/components/KeyLevelsMini";
 import { KeyStatsGrid } from "@/components/KeyStatsGrid";
 import { NewsList } from "@/components/NewsList";
@@ -175,6 +177,7 @@ function OverviewTab({
         <PriceChart ticker={symbol} height={560} visibleRange={visibleRange} />
         <PerformanceRangeBar perf={perf} value={range} onSelect={setRange} />
         <div className="space-y-6 pt-3">
+          <KeyFactsToday verdict={verdict} />
           <KeyFactsCard ticker={symbol} />
           <AboutCard verdict={verdict} />
           <KeyStatsGrid ticker={symbol} />
@@ -215,6 +218,7 @@ function TechnicalsTab({
       </div>
       <aside className="space-y-6">
         {rating && <TechnicalsGauge rating={rating} />}
+        <AnalystGauge ticker={symbol} />
         <KeyLevelsPanel keyLevels={verdict.key_levels} />
       </aside>
     </div>
@@ -234,10 +238,7 @@ function AboutCard({ verdict }: { verdict: VerdictResponse }) {
       <h3 className="text-[11px] font-semibold uppercase tracking-wide text-muted">
         About
       </h3>
-      <p className="mt-2 text-base font-semibold leading-snug text-primary">
-        {verdict.headline}
-      </p>
-      <p className="mt-3 whitespace-pre-wrap text-sm leading-relaxed text-secondary">
+      <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-secondary">
         {shown}
       </p>
       {isLong && (
