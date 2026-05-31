@@ -20,8 +20,8 @@ export function RecentVerdicts({ limit = 20 }: { limit?: number }) {
   const verdicts = useVerdicts(limit);
 
   return (
-    <section className="rounded-md border border-border bg-panel">
-      <h2 className="border-b border-border px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-muted">
+    <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-md border border-border bg-panel">
+      <h2 className="shrink-0 border-b border-border px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-muted">
         Recent verdicts
       </h2>
 
@@ -37,7 +37,7 @@ export function RecentVerdicts({ limit = 20 }: { limit?: number }) {
         </p>
       )}
       {verdicts.data && verdicts.data.length > 0 && (
-        <ul>
+        <ul className="min-h-0 flex-1 overflow-y-auto">
           {verdicts.data.map((v) => (
             <li key={v.id} className="border-b border-border last:border-0">
               <Link

@@ -31,8 +31,9 @@ export function TradeJournal() {
         </p>
       )}
       {orders.data && orders.data.length > 0 && (
+        <div className="max-h-[480px] overflow-y-auto">
         <table className="w-full text-sm">
-          <thead className="border-b border-border text-[11px] uppercase tracking-wide text-muted">
+          <thead className="sticky top-0 z-10 border-b border-border bg-panel text-[11px] uppercase tracking-wide text-muted">
             <tr>
               <th className="px-4 py-2 text-left font-medium">Submitted</th>
               <th className="px-4 py-2 text-left font-medium">Ticker</th>
@@ -83,6 +84,7 @@ export function TradeJournal() {
             ))}
           </tbody>
         </table>
+        </div>
       )}
     </section>
   );
