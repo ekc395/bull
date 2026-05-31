@@ -8,6 +8,7 @@ import { use, useEffect, useMemo, useState } from "react";
 import { AnalysisLoading } from "@/components/AnalysisLoading";
 import { ExecuteOrderButton } from "@/components/ExecuteOrderButton";
 import { IndicatorTable } from "@/components/IndicatorTable";
+import { KeyFactsCard } from "@/components/KeyFactsCard";
 import { KeyLevelsMini } from "@/components/KeyLevelsMini";
 import { KeyStatsGrid } from "@/components/KeyStatsGrid";
 import { NewsList } from "@/components/NewsList";
@@ -174,6 +175,7 @@ function OverviewTab({
         <PriceChart ticker={symbol} height={560} visibleRange={visibleRange} />
         <PerformanceRangeBar perf={perf} value={range} onSelect={setRange} />
         <div className="space-y-6 pt-3">
+          <KeyFactsCard ticker={symbol} />
           <AboutCard verdict={verdict} />
           <KeyStatsGrid ticker={symbol} />
           <ExecuteOrderButton verdict={verdict} />
