@@ -190,6 +190,21 @@ export interface FinancialsResponse {
   quarterly: FinancialPeriod[];
 }
 
+// GET /seasonals/{ticker} — average monthly return over ~N years.
+export interface SeasonalMonth {
+  month: number; // 1-12
+  label: string; // "Jan"
+  avg_return_pct: number;
+  positive_rate: number; // 0..1
+  sample: number;
+}
+
+export interface SeasonalsResponse {
+  ticker: string;
+  years: number;
+  months: SeasonalMonth[];
+}
+
 export interface NewsItem {
   title: string;
   source: string;
