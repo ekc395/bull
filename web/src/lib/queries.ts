@@ -7,6 +7,7 @@ import type {
   AccountResponse,
   AnalyzeRequest,
   ExecuteOrderRequest,
+  FinancialsResponse,
   FundamentalsResponse,
   NewsResponse,
   OrderResponse,
@@ -29,6 +30,8 @@ export const qk = {
   prices: (ticker: string) => ["prices", ticker.toUpperCase()] as const,
   fundamentals: (ticker: string) =>
     ["fundamentals", ticker.toUpperCase()] as const,
+  financials: (ticker: string) =>
+    ["financials", ticker.toUpperCase()] as const,
   news: (ticker: string) => ["news", ticker.toUpperCase()] as const,
   analyze: (ticker: string, timeframe: Timeframe) =>
     ["analyze", ticker.toUpperCase(), timeframe] as const,
@@ -55,6 +58,16 @@ export function useFundamentals(ticker: string | null | undefined) {
     enabled: !!ticker,
     staleTime: 60 * 60_000, // backend caches 24h; an hour is plenty here
     retry: false, // 404 on unknown ticker shouldn't thrash
+  });
+}
+
+export function useFinancials(ticker: string | null | undefined) {
+  return useQuery({
+    queryKey: ticker ? qk.financials(ticker) : ["financials", "_none"],
+    queryFn: () => apiFetch<FinancialsResponse>(`/financials/${ticker}`),
+    enabled: !!ticker,
+    staleTime: 60 * 60_000, // backend caches 24h
+    retry: false,
   });
 }
 
