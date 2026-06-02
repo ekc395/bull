@@ -47,6 +47,13 @@ class Fundamentals(TypedDict, total=False):
     total_revenue: float | None
     fifty_two_week_high: float | None
     fifty_two_week_low: float | None
+    # Company profile for the "About" card (yfinance info; ipo from Finnhub).
+    description: str | None
+    website: str | None
+    ceo: str | None
+    headquarters: str | None  # "City, ST" (US) or "City, Country"
+    employees: int | None
+    ipo_date: str | None  # YYYY-MM-DD
     source: str  # "finnhub" | "yfinance" | "alphavantage"
 
 
@@ -125,6 +132,8 @@ def _from_finnhub(ticker: str) -> Fundamentals | None:
         "profit_margins": margin_pct / 100 if margin_pct is not None else None,
         "revenue_growth": growth_pct / 100 if growth_pct is not None else None,
         "earnings_date": earnings_date,
+        "website": profile.get("weburl") or None,
+        "ipo_date": profile.get("ipo") or None,
         "source": "finnhub",
     }
 
@@ -291,7 +300,56 @@ def _backfill_analyst_targets(result: Fundamentals, ticker: str) -> Fundamentals
         val = _to_float(info.get(info_key))
         if val is not None:
             result[field] = val  # type: ignore[literal-required]
+
+    # Company profile for the "About" card.
+    summary = info.get("longBusinessSummary")
+    if isinstance(summary, str) and summary.strip():
+        result["description"] = summary.strip()
+    if not result.get("website"):
+        site = info.get("website")
+        if isinstance(site, str) and site:
+            result["website"] = site
+
+    ceo = _extract_ceo(info.get("companyOfficers"))
+    if ceo:
+        result["ceo"] = ceo
+
+    hq = _format_hq(info.get("city"), info.get("state"), info.get("country"))
+    if hq:
+        result["headquarters"] = hq
+
+    employees = info.get("fullTimeEmployees")
+    try:
+        if employees is not None:
+            result["employees"] = int(employees)
+    except (TypeError, ValueError):
+        pass
+
     return result
+
+
+def _extract_ceo(officers: Any) -> str | None:
+    """First officer whose title names them CEO. Names can carry stray double
+    spaces from Yahoo, so collapse whitespace."""
+    if not isinstance(officers, list):
+        return None
+    for off in officers:
+        title = (off or {}).get("title") or ""
+        if "CEO" in title or "Chief Executive" in title:
+            name = (off or {}).get("name")
+            if isinstance(name, str) and name.strip():
+                return " ".join(name.split())
+    return None
+
+
+def _format_hq(city: Any, state: Any, country: Any) -> str | None:
+    """'City, ST' for US companies (state present), else 'City, Country'."""
+    if not isinstance(city, str) or not city:
+        return None
+    region = state if isinstance(state, str) and state else country
+    if isinstance(region, str) and region:
+        return f"{city}, {region}"
+    return city
 
 
 def get_fundamentals(ticker: str) -> Fundamentals:

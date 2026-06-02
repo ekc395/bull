@@ -156,6 +156,12 @@ export interface FundamentalsResponse {
   total_revenue?: number | null;
   fifty_two_week_high?: number | null;
   fifty_two_week_low?: number | null;
+  description?: string | null;
+  website?: string | null;
+  ceo?: string | null;
+  headquarters?: string | null;
+  employees?: number | null;
+  ipo_date?: string | null;
   source?: string;
 }
 

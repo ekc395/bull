@@ -5,6 +5,7 @@
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { use, useEffect, useMemo, useState } from "react";
 
+import { AboutCompanyCard } from "@/components/AboutCompanyCard";
 import { AnalysisLoading } from "@/components/AnalysisLoading";
 import { AnalystGauge } from "@/components/AnalystGauge";
 import { ExecuteOrderButton } from "@/components/ExecuteOrderButton";
@@ -179,6 +180,7 @@ function OverviewTab({
         <div className="space-y-6 pt-3">
           <KeyFactsToday verdict={verdict} />
           <KeyFactsCard ticker={symbol} />
+          <AboutCompanyCard ticker={symbol} />
           <AboutCard verdict={verdict} />
           <KeyStatsGrid ticker={symbol} />
           <ExecuteOrderButton verdict={verdict} />
@@ -236,7 +238,7 @@ function AboutCard({ verdict }: { verdict: VerdictResponse }) {
   return (
     <section className="rounded-md border border-border bg-panel p-5">
       <h3 className="text-[11px] font-semibold uppercase tracking-wide text-muted">
-        About
+        Rationale
       </h3>
       <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-secondary">
         {shown}
