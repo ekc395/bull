@@ -176,6 +176,20 @@ export interface FundamentalsResponse {
   source?: string;
 }
 
+// GET /financials/{ticker} — multi-year income-statement series for the charts.
+export interface FinancialPeriod {
+  period: string; // "FY2026" (annual) or "Apr '26" (quarterly)
+  revenue: number | null;
+  net_income: number | null;
+  ebitda: number | null;
+}
+
+export interface FinancialsResponse {
+  ticker: string;
+  annual: FinancialPeriod[];
+  quarterly: FinancialPeriod[];
+}
+
 export interface NewsItem {
   title: string;
   source: string;

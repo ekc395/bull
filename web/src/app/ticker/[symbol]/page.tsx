@@ -9,6 +9,7 @@ import { AboutCompanyCard } from "@/components/AboutCompanyCard";
 import { AnalysisLoading } from "@/components/AnalysisLoading";
 import { AnalystGauge } from "@/components/AnalystGauge";
 import { ExecuteOrderButton } from "@/components/ExecuteOrderButton";
+import { FinancialsCard } from "@/components/FinancialsCard";
 import { IndicatorTable } from "@/components/IndicatorTable";
 import { KeyFactsCard } from "@/components/KeyFactsCard";
 import { KeyFactsToday } from "@/components/KeyFactsToday";
@@ -183,6 +184,7 @@ function OverviewTab({
           <LatestEarningsCard ticker={symbol} />
           <KeyFactsCard ticker={symbol} />
           <AboutCompanyCard ticker={symbol} />
+          <FinancialsCard ticker={symbol} />
           <AboutCard verdict={verdict} />
           <KeyStatsGrid ticker={symbol} />
           <ExecuteOrderButton verdict={verdict} />
