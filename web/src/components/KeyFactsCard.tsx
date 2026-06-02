@@ -37,7 +37,7 @@ export function KeyFactsCard({ ticker }: { ticker: string }) {
     <div className="overflow-hidden rounded-md border border-border bg-panel">
       <div className="flex items-center justify-between border-b border-border px-4 py-2">
         <h3 className="text-[11px] font-semibold uppercase tracking-wide text-muted">
-          Key facts
+          Key stats
         </h3>
         {data.source && (
           <span className="text-[10px] text-muted">via {data.source}</span>
@@ -84,8 +84,27 @@ function buildFacts(d: FundamentalsResponse): Fact[] {
   }
   push("P/E (TTM)", num(d.trailing_pe));
   push("Fwd P/E", num(d.forward_pe));
+  push("Basic EPS (TTM)", d.eps_ttm != null ? formatUsd(d.eps_ttm) : null);
+  push(
+    "Dividend yield",
+    d.dividend_yield != null ? `${d.dividend_yield.toFixed(2)}%` : null,
+  );
+  push("Beta (1Y)", num(d.beta));
   push("Profit margin", pct(d.profit_margins), toneSign(d.profit_margins));
   push("Revenue growth", pct(d.revenue_growth), toneSign(d.revenue_growth));
+  push(
+    "Net income (FY)",
+    d.net_income != null ? `$${formatCompact(d.net_income)}` : null,
+  );
+  push(
+    "Revenue (FY)",
+    d.total_revenue != null ? `$${formatCompact(d.total_revenue)}` : null,
+  );
+  push(
+    "Shares float",
+    d.shares_float != null ? formatCompact(d.shares_float) : null,
+  );
+  push("52-week range", weekRange(d));
 
   if (d.recommendation_key) {
     push(
@@ -106,6 +125,13 @@ function buildFacts(d: FundamentalsResponse): Fact[] {
 
 function num(n: number | null | undefined): string | null {
   return n == null ? null : n.toFixed(2);
+}
+
+function weekRange(d: FundamentalsResponse): string | null {
+  const lo = d.fifty_two_week_low;
+  const hi = d.fifty_two_week_high;
+  if (lo == null || hi == null) return null;
+  return `${formatUsd(lo)} – ${formatUsd(hi)}`;
 }
 
 function pct(n: number | null | undefined): string | null {

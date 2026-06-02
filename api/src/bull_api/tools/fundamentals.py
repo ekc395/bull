@@ -37,6 +37,16 @@ class Fundamentals(TypedDict, total=False):
     # 1.0 = strong buy, 3.0 = hold, 5.0 = strong sell.
     recommendation_mean: float | None
     recommendation_key: str | None
+    # Extra key stats lifted from yfinance info (TradingView "Key stats" parity).
+    beta: float | None
+    eps_ttm: float | None
+    dividend_yield: float | None  # in percent units (0.47 → 0.47%), per yfinance
+    shares_float: float | None
+    shares_outstanding: float | None
+    net_income: float | None
+    total_revenue: float | None
+    fifty_two_week_high: float | None
+    fifty_two_week_low: float | None
     source: str  # "finnhub" | "yfinance" | "alphavantage"
 
 
@@ -265,6 +275,22 @@ def _backfill_analyst_targets(result: Fundamentals, ticker: str) -> Fundamentals
         result["recommendation_mean"] = rm
     if isinstance(rk, str) and rk:
         result["recommendation_key"] = rk
+
+    # General key stats — the same `info` dict carries TradingView's "Key stats".
+    for field, info_key in (
+        ("beta", "beta"),
+        ("eps_ttm", "trailingEps"),
+        ("dividend_yield", "dividendYield"),
+        ("shares_float", "floatShares"),
+        ("shares_outstanding", "sharesOutstanding"),
+        ("net_income", "netIncomeToCommon"),
+        ("total_revenue", "totalRevenue"),
+        ("fifty_two_week_high", "fiftyTwoWeekHigh"),
+        ("fifty_two_week_low", "fiftyTwoWeekLow"),
+    ):
+        val = _to_float(info.get(info_key))
+        if val is not None:
+            result[field] = val  # type: ignore[literal-required]
     return result
 
 
