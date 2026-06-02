@@ -16,6 +16,16 @@ from ..config import settings
 from ..time import trading_day
 
 
+class LatestEarnings(TypedDict, total=False):
+    report_date: str | None  # YYYY-MM-DD
+    fiscal_period: str | None  # e.g. "Q1 FY2027"
+    eps_actual: float | None
+    eps_estimate: float | None
+    eps_surprise_pct: float | None  # (actual - estimate) / |estimate| * 100
+    revenue_actual: float | None
+    revenue_estimate: float | None
+
+
 class Fundamentals(TypedDict, total=False):
     name: str  # Full company name, e.g. "NVIDIA Corporation".
     sector: str
@@ -54,6 +64,7 @@ class Fundamentals(TypedDict, total=False):
     headquarters: str | None  # "City, ST" (US) or "City, Country"
     employees: int | None
     ipo_date: str | None  # YYYY-MM-DD
+    latest_earnings: LatestEarnings | None
     source: str  # "finnhub" | "yfinance" | "alphavantage"
 
 
@@ -136,6 +147,58 @@ def _from_finnhub(ticker: str) -> Fundamentals | None:
         "ipo_date": profile.get("ipo") or None,
         "source": "finnhub",
     }
+
+
+def _get_latest_earnings(ticker: str) -> LatestEarnings | None:
+    """Last reported quarter: EPS from Finnhub /stock/earnings (reliable per
+    ticker, unlike the date-windowed calendar), revenue from yfinance's
+    quarterly income statement. Needs FINNHUB_API_KEY for the EPS block."""
+    if not settings.finnhub_api_key:
+        return None
+    try:
+        data = httpx.get(
+            "https://finnhub.io/api/v1/stock/earnings",
+            params={"symbol": ticker, "token": settings.finnhub_api_key},
+            timeout=10.0,
+        ).json()
+    except Exception:
+        return None
+    if not isinstance(data, list) or not data:
+        return None
+
+    e = max(data, key=lambda x: x.get("period") or "")
+    eps_a = _to_float(e.get("actual"))
+    if eps_a is None:
+        return None
+    eps_e = _to_float(e.get("estimate"))
+    surprise = _to_float(e.get("surprisePercent"))
+    if surprise is None and eps_e not in (None, 0):
+        surprise = (eps_a - (eps_e or 0)) / abs(eps_e) * 100
+
+    quarter, year = e.get("quarter"), e.get("year")
+    result: LatestEarnings = {
+        "report_date": e.get("period"),  # fiscal quarter end
+        "fiscal_period": f"Q{quarter} FY{year}" if quarter and year else None,
+        "eps_actual": eps_a,
+        "eps_estimate": eps_e,
+        "eps_surprise_pct": surprise,
+    }
+    revenue = _latest_quarter_revenue(ticker)
+    if revenue is not None:
+        result["revenue_actual"] = revenue
+    return result
+
+
+def _latest_quarter_revenue(ticker: str) -> float | None:
+    """Most recent quarterly Total Revenue from yfinance (no lxml dependency,
+    unlike its earnings-dates table). Best-effort."""
+    try:
+        q = yf.Ticker(ticker).quarterly_income_stmt
+        if q is not None and "Total Revenue" in q.index and len(q.columns):
+            return _to_float(q.loc["Total Revenue", q.columns[0]])
+    except Exception:
+        return None
+    return None
 
 
 def _from_yfinance(ticker: str) -> Fundamentals | None:
@@ -376,6 +439,7 @@ def get_fundamentals(ticker: str) -> Fundamentals:
     result = _backfill_forward_pe(result, ticker)
     result = _backfill_analyst_targets(result, ticker)
     result["days_until_earnings"] = _compute_days_until_earnings(result.get("earnings_date"))
+    result["latest_earnings"] = _get_latest_earnings(ticker)
     _cache[key] = (now, result)
     return result
 
