@@ -11,6 +11,7 @@ import type {
   FundamentalsResponse,
   NewsResponse,
   OrderResponse,
+  SeasonalsResponse,
   PortfolioHistoryPeriod,
   PortfolioHistoryResponse,
   PositionResponse,
@@ -32,6 +33,8 @@ export const qk = {
     ["fundamentals", ticker.toUpperCase()] as const,
   financials: (ticker: string) =>
     ["financials", ticker.toUpperCase()] as const,
+  seasonals: (ticker: string) =>
+    ["seasonals", ticker.toUpperCase()] as const,
   news: (ticker: string) => ["news", ticker.toUpperCase()] as const,
   analyze: (ticker: string, timeframe: Timeframe) =>
     ["analyze", ticker.toUpperCase(), timeframe] as const,
@@ -65,6 +68,16 @@ export function useFinancials(ticker: string | null | undefined) {
   return useQuery({
     queryKey: ticker ? qk.financials(ticker) : ["financials", "_none"],
     queryFn: () => apiFetch<FinancialsResponse>(`/financials/${ticker}`),
+    enabled: !!ticker,
+    staleTime: 60 * 60_000, // backend caches 24h
+    retry: false,
+  });
+}
+
+export function useSeasonals(ticker: string | null | undefined) {
+  return useQuery({
+    queryKey: ticker ? qk.seasonals(ticker) : ["seasonals", "_none"],
+    queryFn: () => apiFetch<SeasonalsResponse>(`/seasonals/${ticker}`),
     enabled: !!ticker,
     staleTime: 60 * 60_000, // backend caches 24h
     retry: false,

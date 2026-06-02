@@ -20,6 +20,7 @@ import { NewsList } from "@/components/NewsList";
 import { PerformanceRangeBar } from "@/components/PerformanceRangeBar";
 import { PriceChart } from "@/components/PriceChart";
 import { KeyLevelsPanel, ReportSections } from "@/components/ReportSections";
+import { SeasonalsCard } from "@/components/SeasonalsCard";
 import { SymbolHeader } from "@/components/SymbolHeader";
 import { SymbolTabs } from "@/components/SymbolTabs";
 import { TechnicalsGauge } from "@/components/TechnicalsGauge";
@@ -185,6 +186,7 @@ function OverviewTab({
           <KeyFactsCard ticker={symbol} />
           <AboutCompanyCard ticker={symbol} />
           <FinancialsCard ticker={symbol} />
+          <SeasonalsCard ticker={symbol} />
           <AboutCard verdict={verdict} />
           <KeyStatsGrid ticker={symbol} />
           <ExecuteOrderButton verdict={verdict} />
