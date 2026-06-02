@@ -3,7 +3,7 @@
 "use client";
 
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { use, useEffect, useState } from "react";
+import { use, useEffect, useMemo, useState } from "react";
 
 import { AnalysisLoading } from "@/components/AnalysisLoading";
 import { ExecuteOrderButton } from "@/components/ExecuteOrderButton";
@@ -11,13 +11,17 @@ import { IndicatorTable } from "@/components/IndicatorTable";
 import { KeyLevelsMini } from "@/components/KeyLevelsMini";
 import { KeyStatsGrid } from "@/components/KeyStatsGrid";
 import { NewsList } from "@/components/NewsList";
+import { PerformanceRangeBar } from "@/components/PerformanceRangeBar";
 import { PriceChart } from "@/components/PriceChart";
 import { KeyLevelsPanel, ReportSections } from "@/components/ReportSections";
 import { SymbolHeader } from "@/components/SymbolHeader";
 import { SymbolTabs } from "@/components/SymbolTabs";
+import { TechnicalsGauge } from "@/components/TechnicalsGauge";
 import { TimeframeToggle } from "@/components/TimeframeToggle";
 import { VerdictBanner } from "@/components/VerdictBanner";
-import { useAnalyzeQuery, useVerdict } from "@/lib/queries";
+import { usePrices, useAnalyzeQuery, useVerdict } from "@/lib/queries";
+import { computeRangePerformance, type PerfRange } from "@/lib/performance";
+import { computeTechnicalRating } from "@/lib/technicalRating";
 import { coerceTimeframe, useTimeframe } from "@/lib/timeframe";
 import type { Timeframe, VerdictResponse } from "@/types/api";
 
@@ -151,13 +155,29 @@ function OverviewTab({
   symbol: string;
   verdict: VerdictResponse;
 }) {
+  const prices = usePrices(symbol);
+  const bars = prices.data?.bars ?? [];
+  const perf = useMemo(() => computeRangePerformance(bars), [bars]);
+
+  // Default to the widest computable window (≈ the full series we load).
+  const [range, setRange] = useState<PerfRange>("1Y");
+  const selected = perf.find((p) => p.key === range && p.available);
+  const lastDate = bars.length ? bars[bars.length - 1].date : null;
+  const visibleRange =
+    selected?.fromDate && lastDate
+      ? { from: selected.fromDate, to: lastDate }
+      : null;
+
   return (
     <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
-      <div className="min-w-0 space-y-6">
-        <PriceChart ticker={symbol} height={560} />
-        <AboutCard verdict={verdict} />
-        <KeyStatsGrid ticker={symbol} />
-        <ExecuteOrderButton verdict={verdict} />
+      <div className="min-w-0 space-y-3">
+        <PriceChart ticker={symbol} height={560} visibleRange={visibleRange} />
+        <PerformanceRangeBar perf={perf} value={range} onSelect={setRange} />
+        <div className="space-y-6 pt-3">
+          <AboutCard verdict={verdict} />
+          <KeyStatsGrid ticker={symbol} />
+          <ExecuteOrderButton verdict={verdict} />
+        </div>
       </div>
       <aside className="space-y-6">
         <VerdictBanner verdict={verdict} />
@@ -180,12 +200,19 @@ function TechnicalsTab({
   symbol: string;
   verdict: VerdictResponse;
 }) {
+  const prices = usePrices(symbol);
+  const rating =
+    prices.data != null
+      ? computeTechnicalRating(prices.data.indicators, prices.data.current_price)
+      : null;
+
   return (
     <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
       <div className="min-w-0 space-y-6">
         <IndicatorTable ticker={symbol} />
       </div>
       <aside className="space-y-6">
+        {rating && <TechnicalsGauge rating={rating} />}
         <KeyLevelsPanel keyLevels={verdict.key_levels} />
       </aside>
     </div>

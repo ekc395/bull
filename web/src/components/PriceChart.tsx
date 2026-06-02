@@ -21,6 +21,9 @@ import type { PriceBar } from "@/types/api";
 export interface PriceChartProps {
   ticker: string;
   height?: number;
+  // When set, zooms the time scale to [from, to] (bar dates, YYYY-MM-DD).
+  // When null/omitted, the chart fits the full series.
+  visibleRange?: { from: string; to: string } | null;
 }
 
 const SMA_OVERLAYS = [
@@ -43,7 +46,11 @@ function rollingSma(bars: PriceBar[], period: number) {
   return out;
 }
 
-export function PriceChart({ ticker, height = 560 }: PriceChartProps) {
+export function PriceChart({
+  ticker,
+  height = 560,
+  visibleRange = null,
+}: PriceChartProps) {
   const prices = usePrices(ticker);
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -137,8 +144,27 @@ export function PriceChart({ ticker, height = 560 }: PriceChartProps) {
       );
     }
 
-    chart.timeScale().fitContent();
   }, [prices.data]);
+
+  // Apply the selected window (or fit the full series). Runs after the data effect
+  // above, so the bars are already set when we adjust the visible range.
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart || !prices.data) return;
+    const ts = chart.timeScale();
+    if (visibleRange && visibleRange.from !== visibleRange.to) {
+      try {
+        ts.setVisibleRange({
+          from: visibleRange.from as Time,
+          to: visibleRange.to as Time,
+        });
+        return;
+      } catch {
+        // Fall through to fitContent if the range is out of bounds.
+      }
+    }
+    ts.fitContent();
+  }, [visibleRange, prices.data]);
 
   return (
     <div className="relative">
