@@ -7,6 +7,7 @@ import type {
   AccountResponse,
   AnalyzeRequest,
   ExecuteOrderRequest,
+  FundamentalsResponse,
   NewsResponse,
   OrderResponse,
   PortfolioHistoryPeriod,
@@ -26,6 +27,8 @@ export const qk = {
   verdicts: ["verdicts"] as const,
   verdict: (id: number) => ["verdicts", id] as const,
   prices: (ticker: string) => ["prices", ticker.toUpperCase()] as const,
+  fundamentals: (ticker: string) =>
+    ["fundamentals", ticker.toUpperCase()] as const,
   news: (ticker: string) => ["news", ticker.toUpperCase()] as const,
   analyze: (ticker: string, timeframe: Timeframe) =>
     ["analyze", ticker.toUpperCase(), timeframe] as const,
@@ -42,6 +45,16 @@ export function usePrices(ticker: string | null | undefined, bars = 252) {
     enabled: !!ticker,
     refetchInterval: 60_000,
     staleTime: 30_000,
+  });
+}
+
+export function useFundamentals(ticker: string | null | undefined) {
+  return useQuery({
+    queryKey: ticker ? qk.fundamentals(ticker) : ["fundamentals", "_none"],
+    queryFn: () => apiFetch<FundamentalsResponse>(`/fundamentals/${ticker}`),
+    enabled: !!ticker,
+    staleTime: 60 * 60_000, // backend caches 24h; an hour is plenty here
+    retry: false, // 404 on unknown ticker shouldn't thrash
   });
 }
 

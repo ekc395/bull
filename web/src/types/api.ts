@@ -127,6 +127,29 @@ export interface PricesResponse {
   support_resistance: SupportResistance;
 }
 
+// GET /fundamentals/{ticker} — mirrors Fundamentals (TypedDict, total=False) on the
+// backend, so every field beyond ticker is optional.
+export interface FundamentalsResponse {
+  ticker: string;
+  name?: string;
+  sector?: string;
+  industry?: string;
+  market_cap?: number;
+  trailing_pe?: number | null;
+  forward_pe?: number | null;
+  profit_margins?: number | null;
+  revenue_growth?: number | null;
+  earnings_date?: string | null;
+  days_until_earnings?: number | null;
+  analyst_target_mean?: number | null;
+  analyst_target_high?: number | null;
+  analyst_target_low?: number | null;
+  analyst_count?: number | null;
+  recommendation_mean?: number | null;
+  recommendation_key?: string | null;
+  source?: string;
+}
+
 export interface NewsItem {
   title: string;
   source: string;

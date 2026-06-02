@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 
 import { cn } from "@/lib/utils";
 import { TickerLogo } from "@/components/TickerLogo";
-import { usePrices } from "@/lib/queries";
+import { useFundamentals, usePrices } from "@/lib/queries";
 import { formatUsd } from "@/lib/format";
 import type { VerdictResponse } from "@/types/api";
 
@@ -29,6 +29,10 @@ export function SymbolHeader({
   right?: ReactNode;
 }) {
   const prices = usePrices(ticker);
+  const fundamentals = useFundamentals(ticker);
+  const name = fundamentals.data?.name || null;
+  const sector = fundamentals.data?.sector || null;
+  const industry = fundamentals.data?.industry || null;
   const bars = prices.data?.bars ?? [];
   const current = prices.data?.current_price ?? null;
   const previous = bars.length >= 2 ? bars[bars.length - 2].close : null;
@@ -46,21 +50,43 @@ export function SymbolHeader({
         <div className="space-y-2">
           <div className="flex items-center gap-3">
             <TickerLogo ticker={ticker} size={36} />
-            <h1 className="font-mono text-3xl font-bold tracking-tight text-primary">
-              {ticker}
+            <h1 className="truncate text-2xl font-bold tracking-tight text-primary">
+              {name ?? ticker}
             </h1>
-            <span className="rounded bg-elevated px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-secondary">
-              {exchange}
-            </span>
             {verdict && (
               <span
                 className={cn(
-                  "rounded px-2 py-0.5 text-[11px] font-bold tracking-wide",
+                  "shrink-0 rounded px-2 py-0.5 text-[11px] font-bold tracking-wide",
                   ACTION_PILL[verdict.action],
                 )}
               >
                 {verdict.action} · {verdict.confidence}%
               </span>
+            )}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
+            <span className="font-mono font-semibold text-secondary">
+              {ticker}
+            </span>
+            <span className="rounded bg-elevated px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-secondary">
+              {exchange}
+            </span>
+            {sector && (
+              <>
+                <span aria-hidden className="text-border-strong">
+                  ·
+                </span>
+                <span>{sector}</span>
+              </>
+            )}
+            {industry && (
+              <>
+                <span aria-hidden className="text-border-strong">
+                  ›
+                </span>
+                <span>{industry}</span>
+              </>
             )}
           </div>
 
