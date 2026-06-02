@@ -17,6 +17,7 @@ from ..time import trading_day
 
 
 class Fundamentals(TypedDict, total=False):
+    name: str  # Full company name, e.g. "NVIDIA Corporation".
     sector: str
     industry: str
     market_cap: float
@@ -103,6 +104,7 @@ def _from_finnhub(ticker: str) -> Fundamentals | None:
     )
 
     return {
+        "name": profile.get("name") or "",
         "sector": "",  # Finnhub doesn't return a separate sector; only finnhubIndustry.
         "industry": profile.get("finnhubIndustry") or "",
         "market_cap": market_cap,
@@ -134,6 +136,7 @@ def _from_yfinance(ticker: str) -> Fundamentals | None:
             pass
 
     return {
+        "name": info.get("longName") or info.get("shortName") or "",
         "sector": info.get("sector") or "",
         "industry": info.get("industry") or "",
         "market_cap": _to_float(info.get("marketCap")) or 0.0,
@@ -161,6 +164,7 @@ def _from_alphavantage(ticker: str) -> Fundamentals | None:
         return None
 
     return {
+        "name": data.get("Name") or "",
         "sector": data.get("Sector") or "",
         "industry": data.get("Industry") or "",
         "market_cap": _to_float(data.get("MarketCapitalization")) or 0.0,
@@ -232,6 +236,11 @@ def _backfill_analyst_targets(result: Fundamentals, ticker: str) -> Fundamentals
         yf_sector = info.get("sector")
         if isinstance(yf_sector, str) and yf_sector:
             result["sector"] = yf_sector
+
+    if not result.get("name"):
+        yf_name = info.get("longName") or info.get("shortName")
+        if isinstance(yf_name, str) and yf_name:
+            result["name"] = yf_name
 
     tm = _to_float(info.get("targetMeanPrice"))
     th = _to_float(info.get("targetHighPrice"))
