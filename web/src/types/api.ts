@@ -190,19 +190,22 @@ export interface FinancialsResponse {
   quarterly: FinancialPeriod[];
 }
 
-// GET /seasonals/{ticker} — average monthly return over ~N years.
-export interface SeasonalMonth {
-  month: number; // 1-12
-  label: string; // "Jan"
-  avg_return_pct: number;
-  positive_rate: number; // 0..1
-  sample: number;
+// GET /seasonals/{ticker} — cumulative YTD % per year, overlaid on a Jan→Dec axis.
+export interface SeasonalPoint {
+  t: string; // "2000-MM-DD" reference-year date (shared Jan→Dec axis)
+  v: number; // cumulative % from Jan 1 of that real year
+}
+
+export interface SeasonalYear {
+  year: number; // real calendar year, e.g. 2026
+  is_current: boolean;
+  final_pct: number; // last point's cumulative %
+  points: SeasonalPoint[];
 }
 
 export interface SeasonalsResponse {
   ticker: string;
-  years: number;
-  months: SeasonalMonth[];
+  years: SeasonalYear[];
 }
 
 export interface NewsItem {
