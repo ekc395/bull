@@ -1,8 +1,9 @@
 "use client";
 
-// TradingView lightweight-charts wrapper: candlesticks + SMA 20/50/200 + dashed S/R lines.
+// TradingView lightweight-charts wrapper: candlesticks + optional SMA 20/50/200 + dashed S/R lines.
 // SMAs are computed client-side from the OHLCV bars because the backend only returns the
-// most recent indicator value, not a series.
+// most recent indicator value, not a series. Overlays default to off and are toggled per-chart
+// via the chip row above the chart to keep the default view uncluttered.
 
 import {
   CrosshairMode,
@@ -13,7 +14,7 @@ import {
   type ISeriesApi,
   type Time,
 } from "lightweight-charts";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { usePrices } from "@/lib/queries";
 import type { PriceBar } from "@/types/api";
@@ -26,10 +27,18 @@ export interface PriceChartProps {
   visibleRange?: { from: string; to: string } | null;
 }
 
+type OverlayKey = "sma20" | "sma50" | "sma200" | "levels";
+
 const SMA_OVERLAYS = [
-  { period: 20, color: "#f59e0b", title: "SMA 20" },
-  { period: 50, color: "#60a5fa", title: "SMA 50" },
-  { period: 200, color: "#a78bfa", title: "SMA 200" },
+  { key: "sma20", period: 20, color: "#f59e0b", title: "SMA 20" },
+  { key: "sma50", period: 50, color: "#60a5fa", title: "SMA 50" },
+  { key: "sma200", period: 200, color: "#a78bfa", title: "SMA 200" },
+] as const;
+
+// Chips render in this order; "levels" controls both support and resistance lines.
+const OVERLAY_TOGGLES: { key: OverlayKey; label: string; color: string }[] = [
+  ...SMA_OVERLAYS.map((s) => ({ key: s.key, label: s.title, color: s.color })),
+  { key: "levels", label: "Support & Resistance Levels", color: "#26a69a" },
 ];
 
 function rollingSma(bars: PriceBar[], period: number) {
@@ -57,6 +66,14 @@ export function PriceChart({
   const candleRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const smaRefs = useRef<ISeriesApi<"Line">[]>([]);
   const priceLinesRef = useRef<IPriceLine[]>([]);
+
+  // Overlay visibility — all off by default so the base chart stays uncluttered.
+  const [visible, setVisible] = useState<Record<OverlayKey, boolean>>({
+    sma20: false,
+    sma50: false,
+    sma200: false,
+    levels: false,
+  });
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -113,38 +130,40 @@ export function PriceChart({
       })),
     );
 
+    // Empty data hides a line series without destroying it, so toggling is cheap.
     SMA_OVERLAYS.forEach((s, i) => {
-      smaRefs.current[i]?.setData(rollingSma(bars, s.period));
+      smaRefs.current[i]?.setData(visible[s.key] ? rollingSma(bars, s.period) : []);
     });
 
     priceLinesRef.current.forEach((pl) => candle.removePriceLine(pl));
     priceLinesRef.current = [];
-    for (const lvl of prices.data.support_resistance.support) {
-      priceLinesRef.current.push(
-        candle.createPriceLine({
-          price: lvl.price,
-          color: "#26a69a",
-          lineWidth: 1,
-          lineStyle: LineStyle.Dashed,
-          axisLabelVisible: true,
-          title: `S ${lvl.price.toFixed(2)}`,
-        }),
-      );
+    if (visible.levels) {
+      for (const lvl of prices.data.support_resistance.support) {
+        priceLinesRef.current.push(
+          candle.createPriceLine({
+            price: lvl.price,
+            color: "#26a69a",
+            lineWidth: 1,
+            lineStyle: LineStyle.Dashed,
+            axisLabelVisible: true,
+            title: `S ${lvl.price.toFixed(2)}`,
+          }),
+        );
+      }
+      for (const lvl of prices.data.support_resistance.resistance) {
+        priceLinesRef.current.push(
+          candle.createPriceLine({
+            price: lvl.price,
+            color: "#ef5350",
+            lineWidth: 1,
+            lineStyle: LineStyle.Dashed,
+            axisLabelVisible: true,
+            title: `R ${lvl.price.toFixed(2)}`,
+          }),
+        );
+      }
     }
-    for (const lvl of prices.data.support_resistance.resistance) {
-      priceLinesRef.current.push(
-        candle.createPriceLine({
-          price: lvl.price,
-          color: "#ef5350",
-          lineWidth: 1,
-          lineStyle: LineStyle.Dashed,
-          axisLabelVisible: true,
-          title: `R ${lvl.price.toFixed(2)}`,
-        }),
-      );
-    }
-
-  }, [prices.data]);
+  }, [prices.data, visible]);
 
   // Apply the selected window (or fit the full series). Runs after the data effect
   // above, so the bars are already set when we adjust the visible range.
@@ -168,6 +187,36 @@ export function PriceChart({
 
   return (
     <div className="relative">
+      <div className="mb-2 flex flex-wrap items-center gap-1.5">
+        {OVERLAY_TOGGLES.map(({ key, label, color }) => {
+          const on = visible[key];
+          return (
+            <button
+              key={key}
+              type="button"
+              aria-pressed={on}
+              onClick={() =>
+                setVisible((prev) => ({ ...prev, [key]: !prev[key] }))
+              }
+              className={`flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs font-medium transition-colors ${
+                on
+                  ? "border-border-strong bg-elevated text-primary"
+                  : "border-border bg-panel text-muted hover:text-secondary"
+              }`}
+            >
+              <span
+                className="h-2 w-2 rounded-full"
+                style={
+                  on
+                    ? { backgroundColor: color }
+                    : { boxShadow: `inset 0 0 0 1px ${color}` }
+                }
+              />
+              {label}
+            </button>
+          );
+        })}
+      </div>
       <div
         ref={containerRef}
         style={{ height: `${height}px` }}
