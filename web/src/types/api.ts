@@ -176,12 +176,29 @@ export interface FundamentalsResponse {
   source?: string;
 }
 
-// GET /financials/{ticker} — multi-year income-statement series for the charts.
+// GET /financials/{ticker} — multi-period statement series for the charts.
 export interface FinancialPeriod {
   period: string; // "FY2026" (annual) or "Apr '26" (quarterly)
+  report_date: string | null; // period-end date, YYYY-MM-DD
   revenue: number | null;
   net_income: number | null;
   ebitda: number | null;
+  // Revenue → profit conversion (income statement)
+  cost_of_revenue: number | null;
+  gross_profit: number | null;
+  operating_expense: number | null;
+  operating_income: number | null;
+  non_operating: number | null;
+  tax: number | null;
+  pretax_income: number | null;
+  // Earnings
+  eps: number | null;
+  estimate: number | null; // from Finnhub when available
+  surprise_pct: number | null; // from Finnhub when available
+  // Debt level & coverage (balance sheet + cash flow)
+  total_debt: number | null;
+  free_cash_flow: number | null;
+  cash: number | null;
 }
 
 export interface FinancialsResponse {
