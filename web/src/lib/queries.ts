@@ -131,7 +131,10 @@ export function useOrders(limit = 50) {
 
 export function useVerdicts(limit = 50) {
   return useQuery({
-    queryKey: [...qk.verdicts, limit] as const,
+    // "list" disambiguates from the single-verdict key qk.verdict(id) =
+    // ["verdicts", id] — otherwise a limit that equals a verdict id (e.g. both
+    // 20) collides and useVerdict reads the cached list array.
+    queryKey: [...qk.verdicts, "list", limit] as const,
     queryFn: () => apiFetch<VerdictResponse[]>(`/verdicts?limit=${limit}`),
     refetchInterval: 30_000,
   });
