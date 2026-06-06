@@ -354,7 +354,8 @@ function PerformanceTip({ active, payload }: any) {
 // ─── Revenue → profit conversion (waterfall) ─────────────────────────────────
 
 type Stage = {
-  name: string;
+  name: string; // full label for the tooltip
+  label: string; // short axis label (wraps onto up to two lines)
   base: number;
   value: number; // visible height (always >= 0)
   delta: number; // signed change for the tooltip
@@ -369,16 +370,18 @@ function buildWaterfall(p: FinancialPeriod): Stage[] | null {
   const oi = operating_income ?? gp;
   const afterNonOp = oi + (non_operating ?? 0);
 
-  const flow = (name: string, from: number, to: number): Stage => ({
+  const flow = (name: string, from: number, to: number, label = name): Stage => ({
     name,
+    label,
     base: Math.min(from, to),
     value: Math.abs(to - from),
     delta: to - from,
     endLevel: to,
     color: to >= from ? C.up : C.down,
   });
-  const subtotal = (name: string, level: number): Stage => ({
+  const subtotal = (name: string, level: number, label = name): Stage => ({
     name,
+    label,
     base: Math.min(0, level),
     value: Math.abs(level),
     delta: level,
@@ -392,8 +395,8 @@ function buildWaterfall(p: FinancialPeriod): Stage[] | null {
     subtotal("Gross profit", gp),
     flow("Op expenses", gp, oi),
     subtotal("Op income", oi),
-    flow("Non-Op income/expenses", oi, afterNonOp),
-    flow("Taxes & Other", afterNonOp, net_income),
+    flow("Non-Op income/expenses", oi, afterNonOp, "Non-op"),
+    flow("Taxes & Other", afterNonOp, net_income, "Taxes"),
     subtotal("Net income", net_income),
   ];
 }
@@ -413,7 +416,7 @@ function WaterfallPanel({ pickSeries }: PanelProps) {
           <BarChart data={stages} margin={WATERFALL_MARGIN}>
             <CartesianGrid stroke={C.grid} vertical={false} />
             <XAxis
-              dataKey="name"
+              dataKey="label"
               tick={<WaterfallTick />}
               interval={0}
               tickLine={false}
@@ -453,6 +456,8 @@ function WaterfallPanel({ pickSeries }: PanelProps) {
 
 function WaterfallTick({ x, y, payload }: any) {
   const words = String(payload.value).split(" ");
+  // payload.value is the stage `label` (XAxis dataKey="label") — short text
+  // chosen to fit the narrow bar band; the tooltip still shows the full name.
   return (
     <g transform={`translate(${x},${y + STAGE_LABEL_TOP_PX})`}>
       {words.map((w: string, i: number) => (
