@@ -16,14 +16,16 @@ import {
   Bar,
   BarChart,
   CartesianGrid,
-  Cell,
   ComposedChart,
   Line,
+  Rectangle,
   ReferenceLine,
   ResponsiveContainer,
   Scatter,
   ScatterChart,
   Tooltip,
+  usePlotArea,
+  useYAxisScale,
   XAxis,
   YAxis,
 } from "recharts";
@@ -52,31 +54,61 @@ const C = {
   axis: "#787b86",
 };
 
+// Chart layout / geometry (recharts props)
+const CHART_MARGIN = { top: 6, right: 4, bottom: 0, left: 4 };
+// Waterfall needs extra bottom room for two-line stage labels.
+const WATERFALL_MARGIN = { ...CHART_MARGIN, bottom: 14 };
+const Y_AXIS_WIDTH = 46; // $ / EPS axis gutter, px
+const PCT_AXIS_WIDTH = 42; // net-margin % axis gutter, px
+const BAR_RADIUS: [number, number, number, number] = [1, 1, 0, 0]; // rounded bar tops
+const ZERO_LINE_OPACITY = 0.4; // baseline ReferenceLine at y = 0
+const DASH = "3 3"; // dashed stroke (connectors + scatter cursor)
+const AXIS_FONT_PX = 10;
+
+// Waterfall stage labels (wrap onto up to two lines)
+const STAGE_LABEL_FONT_PX = 9;
+const STAGE_LABEL_LINE_PX = 10; // vertical gap between wrapped lines
+const STAGE_LABEL_TOP_PX = 8; // gap below the axis before the first line
+const WATERFALL_AXIS_HEIGHT = 28;
+
+// Waterfall connectors
+const BAR_WIDTH_RATIO = 0.8; // bar fills ~80% of its category band (10% gap each side)
+const CONNECTOR_OPACITY = 0.7;
+
+// Series marks
+const MARGIN_LINE_WIDTH = 2;
+const MARGIN_DOT_RADIUS = 2.5;
+const ESTIMATE_RING_WIDTH = 1.5;
+
+// Display precision + compact-money units (descending)
+const DECIMALS = 2;
+const MONEY_UNITS: readonly (readonly [number, string])[] = [
+  [1e12, "T"],
+  [1e9, "B"],
+  [1e6, "M"],
+  [1e3, "K"],
+];
+
 const MINUS = "−"; // proper minus sign, matches the mockup
 
 function fmtMoney(n: number | null | undefined): string {
   if (n == null) return "—";
   const sign = n < 0 ? MINUS : "";
   const abs = Math.abs(n);
-  for (const [d, u] of [
-    [1e12, "T"],
-    [1e9, "B"],
-    [1e6, "M"],
-    [1e3, "K"],
-  ] as const) {
-    if (abs >= d) return `${sign}${(abs / d).toFixed(2)} ${u} USD`;
+  for (const [d, u] of MONEY_UNITS) {
+    if (abs >= d) return `${sign}${(abs / d).toFixed(DECIMALS)} ${u} USD`;
   }
-  return `${sign}${abs.toFixed(2)} USD`;
+  return `${sign}${abs.toFixed(DECIMALS)} USD`;
 }
 
 function fmtPct(n: number | null | undefined): string {
   if (n == null) return "—";
-  return `${n < 0 ? MINUS : ""}${Math.abs(n).toFixed(2)}%`;
+  return `${n < 0 ? MINUS : ""}${Math.abs(n).toFixed(DECIMALS)}%`;
 }
 
 function fmtEps(n: number | null | undefined): string {
   if (n == null) return "—";
-  return `${n < 0 ? MINUS : ""}${Math.abs(n).toFixed(2)} USD`;
+  return `${n < 0 ? MINUS : ""}${Math.abs(n).toFixed(DECIMALS)} USD`;
 }
 
 function fmtDate(iso: string | null | undefined): string | null {
@@ -204,7 +236,7 @@ function NoData() {
   );
 }
 
-const axisTick = { fill: C.axis, fontSize: 10 };
+const axisTick = { fill: C.axis, fontSize: AXIS_FONT_PX };
 const cursorFill = { fill: "#ffffff", fillOpacity: 0.04 };
 
 // ─── Tooltip ─────────────────────────────────────────────────────────────────
@@ -257,7 +289,7 @@ function PerformancePanel({ pickSeries }: PanelProps) {
         <NoData />
       ) : (
         <ResponsiveContainer width="100%" height={CHART_H}>
-          <ComposedChart data={rows} margin={{ top: 6, right: 4, bottom: 0, left: 4 }}>
+          <ComposedChart data={rows} margin={CHART_MARGIN}>
             <CartesianGrid stroke={C.grid} vertical={false} />
             <XAxis dataKey="period" tick={axisTick} tickLine={false} axisLine={{ stroke: C.grid }} />
             <YAxis
@@ -266,7 +298,7 @@ function PerformancePanel({ pickSeries }: PanelProps) {
               tick={axisTick}
               tickLine={false}
               axisLine={false}
-              width={42}
+              width={PCT_AXIS_WIDTH}
               tickFormatter={(v: number) => `${v}%`}
             />
             <YAxis
@@ -275,20 +307,20 @@ function PerformancePanel({ pickSeries }: PanelProps) {
               tick={axisTick}
               tickLine={false}
               axisLine={false}
-              width={46}
+              width={Y_AXIS_WIDTH}
               tickFormatter={(v: number) => formatCompact(v)}
             />
-            <ReferenceLine yAxisId="usd" y={0} stroke={C.axis} strokeOpacity={0.4} />
+            <ReferenceLine yAxisId="usd" y={0} stroke={C.axis} strokeOpacity={ZERO_LINE_OPACITY} />
             <Tooltip cursor={cursorFill} content={<PerformanceTip />} />
-            <Bar yAxisId="usd" dataKey="revenue" fill={C.revenue} radius={[1, 1, 0, 0]} />
-            <Bar yAxisId="usd" dataKey="net_income" fill={C.netIncome} radius={[1, 1, 0, 0]} />
+            <Bar yAxisId="usd" dataKey="revenue" fill={C.revenue} radius={BAR_RADIUS} />
+            <Bar yAxisId="usd" dataKey="net_income" fill={C.netIncome} radius={BAR_RADIUS} />
             <Line
               yAxisId="pct"
               type="linear"
               dataKey="margin"
               stroke={C.margin}
-              strokeWidth={2}
-              dot={{ r: 2.5, fill: C.margin, strokeWidth: 0 }}
+              strokeWidth={MARGIN_LINE_WIDTH}
+              dot={{ r: MARGIN_DOT_RADIUS, fill: C.margin, strokeWidth: 0 }}
               connectNulls
             />
           </ComposedChart>
@@ -326,6 +358,7 @@ type Stage = {
   base: number;
   value: number; // visible height (always >= 0)
   delta: number; // signed change for the tooltip
+  endLevel: number; // running cumulative at this stage's right edge (connectors)
   color: string;
 };
 
@@ -341,6 +374,7 @@ function buildWaterfall(p: FinancialPeriod): Stage[] | null {
     base: Math.min(from, to),
     value: Math.abs(to - from),
     delta: to - from,
+    endLevel: to,
     color: to >= from ? C.up : C.down,
   });
   const subtotal = (name: string, level: number): Stage => ({
@@ -348,6 +382,7 @@ function buildWaterfall(p: FinancialPeriod): Stage[] | null {
     base: Math.min(0, level),
     value: Math.abs(level),
     delta: level,
+    endLevel: level,
     color: C.subtotal,
   });
 
@@ -375,7 +410,7 @@ function WaterfallPanel({ pickSeries }: PanelProps) {
         <NoData />
       ) : (
         <ResponsiveContainer width="100%" height={CHART_H}>
-          <BarChart data={stages} margin={{ top: 6, right: 4, bottom: 14, left: 4 }}>
+          <BarChart data={stages} margin={WATERFALL_MARGIN}>
             <CartesianGrid stroke={C.grid} vertical={false} />
             <XAxis
               dataKey="name"
@@ -383,22 +418,32 @@ function WaterfallPanel({ pickSeries }: PanelProps) {
               interval={0}
               tickLine={false}
               axisLine={{ stroke: C.grid }}
-              height={28}
+              height={WATERFALL_AXIS_HEIGHT}
             />
             <YAxis
               tick={axisTick}
               tickLine={false}
               axisLine={false}
-              width={46}
+              width={Y_AXIS_WIDTH}
               tickFormatter={(v: number) => formatCompact(v)}
             />
             <Tooltip cursor={cursorFill} content={<WaterfallTip />} />
             <Bar dataKey="base" stackId="w" fill="transparent" isAnimationActive={false} />
-            <Bar dataKey="value" stackId="w" radius={[1, 1, 0, 0]} isAnimationActive={false}>
-              {stages.map((s, i) => (
-                <Cell key={i} fill={s.color} />
-              ))}
-            </Bar>
+            <Bar
+              dataKey="value"
+              stackId="w"
+              isAnimationActive={false}
+              // Per-stage color (subtotal / increase / decrease) via shape — the
+              // v3 replacement for the deprecated <Cell> child.
+              shape={(props: any) => (
+                <Rectangle
+                  {...props}
+                  radius={BAR_RADIUS}
+                  fill={props.payload.color}
+                />
+              )}
+            />
+            <WaterfallConnectors stages={stages} />
           </BarChart>
         </ResponsiveContainer>
       )}
@@ -409,21 +454,55 @@ function WaterfallPanel({ pickSeries }: PanelProps) {
 function WaterfallTick({ x, y, payload }: any) {
   const words = String(payload.value).split(" ");
   return (
-    <g transform={`translate(${x},${y + 8})`}>
+    <g transform={`translate(${x},${y + STAGE_LABEL_TOP_PX})`}>
       {words.map((w: string, i: number) => (
         <text
           key={i}
           x={0}
-          y={i * 10}
+          y={i * STAGE_LABEL_LINE_PX}
           textAnchor="middle"
           fill={C.axis}
-          fontSize={9}
+          fontSize={STAGE_LABEL_FONT_PX}
         >
           {w}
         </text>
       ))}
     </g>
   );
+}
+
+// Dashed horizontal links from each stage's running total to the next bar,
+// like the TradingView waterfall. recharts 3.x exposes the plot area + y-scale
+// via hooks; x positions are evenly-spaced category bands we compute directly.
+function WaterfallConnectors({ stages }: { stages: Stage[] }) {
+  const plot = usePlotArea();
+  const yScale = useYAxisScale();
+  if (!plot || !yScale) return null;
+  const n = stages.length;
+  const band = plot.width / n;
+  const halfBar = (band * BAR_WIDTH_RATIO) / 2; // bar edge from its band center
+
+  const lines: React.ReactNode[] = [];
+  for (let i = 0; i < n - 1; i++) {
+    const cxHere = plot.x + (i + 0.5) * band; // band center of stage i
+    const cxNext = plot.x + (i + 1.5) * band; // band center of stage i + 1
+    const y = yScale(stages[i].endLevel);
+    if (y == null) continue;
+    lines.push(
+      <line
+        key={i}
+        x1={cxHere + halfBar}
+        y1={y}
+        x2={cxNext - halfBar}
+        y2={y}
+        stroke={C.axis}
+        strokeDasharray={DASH}
+        strokeWidth={1}
+        strokeOpacity={CONNECTOR_OPACITY}
+      />,
+    );
+  }
+  return <g>{lines}</g>;
 }
 
 function WaterfallTip({ active, payload }: any) {
@@ -467,21 +546,21 @@ function DebtPanel({ pickSeries }: PanelProps) {
         <NoData />
       ) : (
         <ResponsiveContainer width="100%" height={CHART_H}>
-          <BarChart data={rows} margin={{ top: 6, right: 4, bottom: 0, left: 4 }}>
+          <BarChart data={rows} margin={CHART_MARGIN}>
             <CartesianGrid stroke={C.grid} vertical={false} />
             <XAxis dataKey="period" tick={axisTick} tickLine={false} axisLine={{ stroke: C.grid }} />
             <YAxis
               tick={axisTick}
               tickLine={false}
               axisLine={false}
-              width={46}
+              width={Y_AXIS_WIDTH}
               tickFormatter={(v: number) => formatCompact(v)}
             />
-            <ReferenceLine y={0} stroke={C.axis} strokeOpacity={0.4} />
+            <ReferenceLine y={0} stroke={C.axis} strokeOpacity={ZERO_LINE_OPACITY} />
             <Tooltip cursor={cursorFill} content={<DebtTip />} />
-            <Bar dataKey="debt" fill={C.debt} radius={[1, 1, 0, 0]} />
-            <Bar dataKey="fcf" fill={C.fcf} radius={[1, 1, 0, 0]} />
-            <Bar dataKey="cash" fill={C.cash} radius={[1, 1, 0, 0]} />
+            <Bar dataKey="debt" fill={C.debt} radius={BAR_RADIUS} />
+            <Bar dataKey="fcf" fill={C.fcf} radius={BAR_RADIUS} />
+            <Bar dataKey="cash" fill={C.cash} radius={BAR_RADIUS} />
           </BarChart>
         </ResponsiveContainer>
       )}
@@ -550,7 +629,7 @@ function EarningsPanel({
         <NoData />
       ) : (
         <ResponsiveContainer width="100%" height={CHART_H}>
-          <ScatterChart margin={{ top: 6, right: 4, bottom: 0, left: 4 }}>
+          <ScatterChart margin={CHART_MARGIN}>
             <CartesianGrid stroke={C.grid} vertical={false} />
             <XAxis
               dataKey="period"
@@ -566,12 +645,12 @@ function EarningsPanel({
               tick={axisTick}
               tickLine={false}
               axisLine={false}
-              width={46}
-              tickFormatter={(v: number) => v.toFixed(2)}
+              width={Y_AXIS_WIDTH}
+              tickFormatter={(v: number) => v.toFixed(DECIMALS)}
             />
-            <ReferenceLine y={0} stroke={C.axis} strokeOpacity={0.4} />
+            <ReferenceLine y={0} stroke={C.axis} strokeOpacity={ZERO_LINE_OPACITY} />
             <Tooltip
-              cursor={{ strokeDasharray: "3 3", stroke: C.axis }}
+              cursor={{ strokeDasharray: DASH, stroke: C.axis }}
               content={<EarningsTip />}
             />
             <Scatter data={actual} fill={C.fcf} />
@@ -579,7 +658,7 @@ function EarningsPanel({
               data={estimate}
               fill="transparent"
               stroke={C.axis}
-              strokeWidth={1.5}
+              strokeWidth={ESTIMATE_RING_WIDTH}
             />
           </ScatterChart>
         </ResponsiveContainer>
