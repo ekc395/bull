@@ -6,7 +6,7 @@ import { RecentVerdicts } from "@/components/RecentVerdicts";
 import { TickerSearch } from "@/components/TickerSearch";
 import { TimeframeToggle } from "@/components/TimeframeToggle";
 import { TradeJournal } from "@/components/TradeJournal";
-import { useTimeframe } from "@/lib/timeframe";
+import { TIMEFRAME_HINTS, TIMEFRAME_LABELS, useTimeframe } from "@/lib/timeframe";
 
 export default function DashboardPage() {
   const [timeframe, setTimeframe] = useTimeframe();
@@ -42,6 +42,9 @@ export default function DashboardPage() {
                 compact
               />
             </div>
+            <p className="text-[11px] text-muted">
+              {TIMEFRAME_LABELS[timeframe]} — {TIMEFRAME_HINTS[timeframe]}
+            </p>
             <TickerSearch timeframe={timeframe} />
           </section>
 
