@@ -16,7 +16,7 @@ Swing trading agent powered by Claude. Enter a ticker → the agent fetches pric
 
 - **Backend** (`api/`): FastAPI · Pydantic v2 · SQLAlchemy 2.0 · Alembic · SQLite
 - **Frontend** (`web/`): Next.js 15 (App Router) · TypeScript · Tailwind · shadcn/ui · TradingView `lightweight-charts` · TanStack React Query
-- **Agent**: Anthropic SDK — `claude-opus-4-7` by default. **Deterministic tool fetch + single-shot synthesis** (no tool-use loop). Override the model with `BULL_MODEL`.
+- **Agent**: Anthropic SDK — `claude-opus-4-8` by default. **Deterministic tool fetch + single-shot synthesis** (no tool-use loop). Override the model with `BULL_MODEL`.
 - **Data**: yfinance, Google News RSS (via `feedparser`), Finnhub and Alpha Vantage (both optional, used as fundamentals fallbacks), Alpaca paper-trading
 
 ## Setup
@@ -50,7 +50,7 @@ ALPACA_API_KEY=
 ALPACA_API_SECRET=
 FINNHUB_API_KEY=
 ALPHAVANTAGE_API_KEY=
-BULL_MODEL=claude-opus-4-7
+BULL_MODEL=claude-opus-4-8
 BULL_POSITION_SIZE_PCT=2.0
 DATABASE_URL=sqlite+aiosqlite:///./bull.db
 ```
@@ -78,7 +78,7 @@ The only paid surface is the Anthropic API. Everything else (yfinance, Google Ne
 
 | Model                         | Approx. cost / analysis |
 | ----------------------------- | ----------------------- |
-| `claude-opus-4-7` (default)   | $0.10 – $0.15           |
+| `claude-opus-4-8` (default)   | $0.10 – $0.15           |
 | `claude-sonnet-4-6`           | $0.02 – $0.03           |
 | `claude-haiku-4-5-20251001`   | $0.005 – $0.01          |
 
