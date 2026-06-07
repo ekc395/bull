@@ -4,9 +4,18 @@
 // (1 = strong buy … 5 = strong sell) onto the shared RatingGauge, with the
 // low / mean / high price targets as a footer. Data from /fundamentals.
 
-import { RatingGauge, type GaugeTone } from "@/components/RatingGauge";
+import { RatingGauge } from "@/components/RatingGauge";
 import { useFundamentals } from "@/lib/queries";
 import { formatUsd } from "@/lib/format";
+
+// Strong sell → strong buy: orange → amber → yellow-green → green → teal.
+const ANALYST_PALETTE = [
+  "#E8842E",
+  "#E0A93A",
+  "#C2C04A",
+  "#5FB87C",
+  "#26A69A",
+] as const;
 
 export function AnalystGauge({ ticker }: { ticker: string }) {
   const { data } = useFundamentals(ticker);
@@ -18,7 +27,6 @@ export function AnalystGauge({ ticker }: { ticker: string }) {
   const label = data.recommendation_key
     ? titleCase(data.recommendation_key)
     : labelFromScore(score);
-  const tone = toneFor(data.recommendation_key, score);
 
   const targets = [
     { label: "Low", value: data.analyst_target_low },
@@ -34,7 +42,7 @@ export function AnalystGauge({ ticker }: { ticker: string }) {
       }
       score={score}
       label={label}
-      labelTone={tone}
+      palette={ANALYST_PALETTE}
     >
       {targets.length > 0 && (
         <div className="mt-3 grid grid-cols-3 border-t border-border pt-3 text-center">
@@ -65,12 +73,4 @@ function labelFromScore(score: number): string {
   if (score > -0.1) return "Hold";
   if (score > -0.5) return "Sell";
   return "Strong sell";
-}
-
-function toneFor(key: string | null | undefined, score: number): GaugeTone {
-  const k = key ?? "";
-  if (k.includes("buy") || score >= 0.1) return "bull";
-  if (k.includes("sell") || k.includes("underperform") || score <= -0.1)
-    return "bear";
-  return "neutral";
 }
