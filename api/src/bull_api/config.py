@@ -12,7 +12,7 @@ class Settings(BaseSettings):
     finnhub_api_key: str = ""
     alphavantage_api_key: str = ""
 
-    bull_model: str = "claude-opus-4-7"
+    bull_model: str = "claude-opus-4-8"
     bull_position_size_pct: float = 2.0
 
     database_url: str = "sqlite+aiosqlite:///./bull.db"

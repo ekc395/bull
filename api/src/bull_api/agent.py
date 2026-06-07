@@ -145,7 +145,7 @@ _PARAM_TAG_RE = re.compile(
 def _coerce_report(value: Any) -> dict[str, str]:
     """Defensively normalize the `report` tool input.
 
-    Opus 4.7 occasionally emits the report as a single string containing the
+    Opus occasionally emits the report as a single string containing the
     internal `<parameter name="...">...</parameter>` XML format instead of a
     JSON object. Parse those tags back out and pad missing fields with empty
     strings so the response schema stays valid.
