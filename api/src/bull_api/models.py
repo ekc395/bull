@@ -3,7 +3,16 @@
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import JSON, DateTime, Float, ForeignKey, Integer, String, UniqueConstraint
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    DateTime,
+    Float,
+    ForeignKey,
+    Integer,
+    String,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .db import Base
@@ -74,5 +83,27 @@ class VerdictScore(Base):
     exit_close: Mapped[float] = mapped_column(Float)
     realized_return_pct: Mapped[float] = mapped_column(Float)
     scored_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
+
+    verdict: Mapped["Verdict"] = relationship()
+
+
+class PolicyDecision(Base):
+    """A gating/sizing decision the learning layer made for a verdict.
+
+    Persisted so the *policy itself* can be forward-tested (did acting on its
+    BUYs/SELLs at its sizes pay off?) the same way `VerdictScore` evaluates the
+    model. One row per execution-time decision; `policy_version` tags the rule
+    revision so decisions stay comparable across changes. See plan.md → Phase 3.
+    """
+
+    __tablename__ = "policy_decisions"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    verdict_id: Mapped[int] = mapped_column(ForeignKey("verdicts.id"), index=True)
+    act: Mapped[bool] = mapped_column(Boolean)
+    size_pct: Mapped[float] = mapped_column(Float)  # 0.0 when act is False
+    rationale: Mapped[str] = mapped_column(String(512))
+    policy_version: Mapped[str] = mapped_column(String(32))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
 
     verdict: Mapped["Verdict"] = relationship()

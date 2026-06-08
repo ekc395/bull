@@ -10,7 +10,10 @@ from ..broker import alpaca
 from ..config import settings
 from ..db import get_session
 from ..models import Order
+from ..policy.analysis import collect_outcomes
+from ..policy.gate import decision_for_verdict
 from ..repos import orders as orepo
+from ..repos import policy as prepo
 from ..repos import verdicts as vrepo
 from ..schemas import (
     AccountResponse,
@@ -97,7 +100,8 @@ async def place_order(req: ExecuteOrderRequest, session: AsyncSession = Depends(
     side = "buy" if verdict.action == "BUY" else "sell"
 
     # Amount: caller may pass either `notional` (dollars) or `qty` (shares).
-    # If neither, fall back to equity * BULL_POSITION_SIZE_PCT / 100.
+    # A passed amount is a manual override and bypasses the policy entirely.
+    # If neither is passed, size from the learning-layer policy (Phase 3).
     notional: float | None = req.notional
     qty: float | None = req.qty
     if notional is None and qty is None:
@@ -105,7 +109,20 @@ async def place_order(req: ExecuteOrderRequest, session: AsyncSession = Depends(
             account = await asyncio.to_thread(alpaca.get_account)
         except RuntimeError as e:
             raise HTTPException(status_code=503, detail=str(e)) from e
-        notional = round(account["equity"] * settings.bull_position_size_pct / 100, 2)
+
+        # Record the policy's decision so it can be forward-tested later. A
+        # deliberate click still executes at >= base size even when the policy
+        # advises against acting; the persisted decision captures that it
+        # declined (and why).
+        outcomes = await collect_outcomes(session)
+        decision = decision_for_verdict(verdict, outcomes)
+        await prepo.insert_decision(decision, verdict.id, session)
+        size_pct = (
+            decision.size_pct
+            if decision.act and decision.size_pct > 0
+            else settings.bull_position_size_pct
+        )
+        notional = round(account["equity"] * size_pct / 100, 2)
         if notional <= 0:
             raise HTTPException(
                 status_code=400, detail=f"Computed notional ${notional} is non-positive"

@@ -48,6 +48,19 @@ class Report(BaseModel):
     reasoning: str
 
 
+class PolicyDecisionResponse(BaseModel):
+    """Advisory gating/sizing decision from the learning layer (Phase 3).
+
+    Attached to a verdict for the UI. `act=False` means the policy advises
+    against acting (rationale explains why); `size_pct` is the suggested
+    position size as a % of equity when acting (0.0 otherwise)."""
+
+    act: bool
+    size_pct: float
+    rationale: str
+    policy_version: str
+
+
 class VerdictResponse(BaseModel):
     id: int
     ticker: str
@@ -59,6 +72,7 @@ class VerdictResponse(BaseModel):
     created_at: UTCDateTime
     model_used: str
     timeframe: Timeframe = "medium"
+    policy: PolicyDecisionResponse | None = None
 
 
 class AnalyzeRequest(BaseModel):
