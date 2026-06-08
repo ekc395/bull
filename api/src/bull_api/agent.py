@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from .checks import validate_verdict
 from .config import settings
 from .models import Verdict
+from .policy.recall import similar_outcomes
 from .prompts import SYSTEM_PROMPT_BASE, for_timeframe
 from .repos import verdicts as vrepo
 from .time import trading_day
@@ -189,6 +190,21 @@ async def analyze_ticker(
     # base is shared across timeframes so it caches; the timeframe blurb
     # is small (~600 tokens) and appended uncached.
     cached_tool = {**SUBMIT_VERDICT_TOOL, "cache_control": {"type": "ephemeral"}}
+
+    # Phase 4 (Part B), flag-gated: append the model's own past verdict→outcome
+    # track record for similar setups to the *uncached* user message (preserves
+    # prompt caching of the system prompt + tool schema). Empty on cold start.
+    user_message = (
+        f"Facts bundle for {ticker} as of {facts['as_of']} "
+        f"(holding period: {timeframe}):\n\n"
+        f"```json\n{json.dumps(facts, indent=2, default=str)}\n```\n\n"
+    )
+    if settings.bull_outcome_feedback:
+        recall = await similar_outcomes(session, ticker, facts)
+        if recall:
+            user_message += recall + "\n\n"
+    user_message += "Produce the verdict via submit_verdict."
+
     try:
         response = await client.messages.create(
             model=settings.bull_model,
@@ -206,17 +222,7 @@ async def analyze_ticker(
             ],
             tools=[cached_tool],
             tool_choice={"type": "tool", "name": "submit_verdict"},
-            messages=[
-                {
-                    "role": "user",
-                    "content": (
-                        f"Facts bundle for {ticker} as of {facts['as_of']} "
-                        f"(holding period: {timeframe}):\n\n"
-                        f"```json\n{json.dumps(facts, indent=2, default=str)}\n```\n\n"
-                        "Produce the verdict via submit_verdict."
-                    ),
-                }
-            ],
+            messages=[{"role": "user", "content": user_message}],
         )
     except anthropic.BadRequestError as e:
         if "credit balance" in str(e).lower():

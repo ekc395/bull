@@ -11,6 +11,7 @@ Swing trading agent powered by Claude. Enter a ticker → the agent fetches pric
 - **Verdict caching** — keyed by `(ticker, ET trading day)`. Same ticker on the same NYSE session returns the cached row, no LLM call. Bypass with `force=true`.
 - **Paper trading via Alpaca** — `paper=True` is hardcoded; there is no path that constructs a live client. Position sizing defaults to 2% of equity (`BULL_POSITION_SIZE_PCT`).
 - **Portfolio + journal** — equity curve, current positions, and a verdict history with realized-return scoring at fixed trading-day horizons.
+- **Outcome-feedback learning layer** (`policy/`) — a rule wrapped around the fixed model, learned from realized outcomes rather than by training it. It calibrates confidence and per-setup edge (`GET /policy/calibration`), gates and sizes trades (each verdict carries an advisory act/size decision; `POST /orders` sizes from it), and can optionally feed the model its own past outcomes for similar setups (`BULL_OUTCOME_FEEDBACK`, off by default). Degrades gracefully — guardrails-only at base size until enough verdicts are scored.
 
 ## Stack
 
@@ -52,6 +53,7 @@ FINNHUB_API_KEY=
 ALPHAVANTAGE_API_KEY=
 BULL_MODEL=claude-opus-4-8
 BULL_POSITION_SIZE_PCT=2.0
+BULL_OUTCOME_FEEDBACK=false          # feed the model its own past outcomes (adds input tokens)
 DATABASE_URL=sqlite+aiosqlite:///./bull.db
 ```
 
@@ -99,10 +101,12 @@ api/                            FastAPI backend
   src/bull_api/
     agent.py                    facts fetch + single-shot Opus synthesis
     prompts.py                  system prompt (structural thesis, calibration, gates)
+    checks.py                   compute_signals (shared) + post-verdict warnings
+    policy/                     learning layer: features, analysis, gate, recall
     tools/                      prices, indicators, support_resistance,
                                 fundamentals, news, supply_chain, market_context
     routers/                    analyze, prices, verdicts, broker, history,
-                                news, scores
+                                news, scores, policy
     broker/alpaca.py            paper-trading wrapper (paper=True hardcoded)
   alembic/                      migrations
 web/                            Next.js frontend

@@ -15,6 +15,11 @@ class Settings(BaseSettings):
     bull_model: str = "claude-opus-4-8"
     bull_position_size_pct: float = 2.0
 
+    # Phase 4 (Part B): when set, agent.py appends the model's own past
+    # verdict→outcome track record for similar setups to the uncached user
+    # message. Default off — it adds input tokens per analysis.
+    bull_outcome_feedback: bool = False
+
     database_url: str = "sqlite+aiosqlite:///./bull.db"
 
 
