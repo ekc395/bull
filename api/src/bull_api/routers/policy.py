@@ -23,6 +23,9 @@ async def get_calibration(
     min_n: int = Query(
         DEFAULT_MIN_N, ge=1, le=1000, description="Min samples before a bucket is trusted"
     ),
+    model: str | None = Query(
+        None, description="Model regime to analyze; defaults to current BULL_MODEL, 'all' to pool"
+    ),
     session: AsyncSession = Depends(get_session),
 ) -> dict[str, Any]:
-    return await report(session, threshold=threshold, min_n=min_n)
+    return await report(session, threshold=threshold, min_n=min_n, model=model)

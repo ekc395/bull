@@ -5,7 +5,13 @@ table builders directly (no DB), the min-n thin flag, and the per-feature edge
 slicing.
 """
 
-from bull_api.policy.analysis import Outcome, calibration_table, edge_table
+from bull_api.config import settings
+from bull_api.policy.analysis import (
+    Outcome,
+    _resolve_model,
+    calibration_table,
+    edge_table,
+)
 from bull_api.policy.features import Context
 
 
@@ -124,3 +130,12 @@ def test_edge_none_and_bool_value_keys():
 def test_edge_empty_outcomes():
     assert edge_table([], min_n=1) == {}
     assert calibration_table([], min_n=1) == {}
+
+
+# --- model regime filter ---------------------------------------------------
+
+
+def test_resolve_model_selector():
+    assert _resolve_model(None) == settings.bull_model  # default: current regime
+    assert _resolve_model("all") is None  # no filter
+    assert _resolve_model("claude-x") == "claude-x"  # explicit passthrough

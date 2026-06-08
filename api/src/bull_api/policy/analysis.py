@@ -25,6 +25,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..config import settings
 from ..db import SessionLocal
 from ..models import Verdict, VerdictScore
 from ..scoring import _classify_hit, _hit_stats, _ret_stats
@@ -60,6 +61,25 @@ class Outcome:
     action: str
     horizon_days: int
     return_pct: float
+
+
+def _resolve_model(model: str | None) -> str | None:
+    """Map a model selector to a SQL filter value.
+
+    The learning layer fits a wrapper around a *fixed* policy, so by default it
+    only learns from verdicts produced by the current model — pooling outputs
+    from different models (or prompt regimes) blends two policies and pollutes
+    the calibration/edge stats.
+
+      None  -> the current BULL_MODEL (the regime being learned).
+      "all" -> no filter (inspect every regime).
+      else  -> that specific model string.
+    """
+    if model is None:
+        return settings.bull_model
+    if model == "all":
+        return None
+    return model
 
 
 def _bucket_value(v: Any) -> str:
@@ -150,13 +170,19 @@ def edge_table(
     return table
 
 
-async def collect_outcomes(session: AsyncSession) -> list[Outcome]:
+async def collect_outcomes(
+    session: AsyncSession, *, model: str | None = None
+) -> list[Outcome]:
     """Join scores to verdicts and attach each verdict's bucketed context.
 
+    Restricted to the current `BULL_MODEL` by default (see `_resolve_model`).
     Context is derived once per verdict and shared across that verdict's
     horizons (a verdict has up to len(DEFAULT_HORIZONS) score rows).
     """
     stmt = select(VerdictScore, Verdict).join(Verdict, VerdictScore.verdict_id == Verdict.id)
+    resolved = _resolve_model(model)
+    if resolved is not None:
+        stmt = stmt.where(Verdict.model_used == resolved)
     rows = list((await session.execute(stmt)).all())
 
     ctx_cache: dict[int, Context] = {}
@@ -178,13 +204,22 @@ async def collect_outcomes(session: AsyncSession) -> list[Outcome]:
 
 
 async def report(
-    session: AsyncSession, *, threshold: float = 0.0, min_n: int = DEFAULT_MIN_N
+    session: AsyncSession,
+    *,
+    threshold: float = 0.0,
+    min_n: int = DEFAULT_MIN_N,
+    model: str | None = None,
 ) -> dict[str, Any]:
-    """Full Phase-2 surface: calibration + edge over all scored verdicts."""
-    outcomes = await collect_outcomes(session)
+    """Full Phase-2 surface: calibration + edge over scored verdicts.
+
+    Scoped to the current `BULL_MODEL` by default; pass `model="all"` to pool
+    every regime or a specific model string to inspect one.
+    """
+    outcomes = await collect_outcomes(session, model=model)
     return {
         "threshold_pct": threshold,
         "min_n": min_n,
+        "model": _resolve_model(model) or "all",
         "scored_rows": len(outcomes),
         "calibration": calibration_table(outcomes, threshold=threshold, min_n=min_n),
         "edge": edge_table(outcomes, threshold=threshold, min_n=min_n),
@@ -213,11 +248,15 @@ def _print_buckets(body: dict[str, Any], indent: int) -> None:
 
 
 async def _cli() -> None:
+    import sys
+
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+    model = "all" if "--all" in sys.argv else None  # default: current BULL_MODEL
     async with SessionLocal() as session:
-        r = await report(session)
+        r = await report(session, model=model)
     print(
-        f"scored_rows={r['scored_rows']}  threshold={r['threshold_pct']}%  min_n={r['min_n']}"
+        f"model={r['model']}  scored_rows={r['scored_rows']}  "
+        f"threshold={r['threshold_pct']}%  min_n={r['min_n']}"
     )
     if not r["scored_rows"]:
         print("\nNo scored verdicts yet — run `python -m bull_api.scoring` first.")

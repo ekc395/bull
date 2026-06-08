@@ -26,6 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..checks import compute_signals
 from ..models import Verdict, VerdictScore
+from .analysis import _resolve_model
 
 DEFAULT_K = 6
 MAX_BLOCK_CHARS = 1400
@@ -114,9 +115,16 @@ def _format_block(ticker: str, rows: list[RecallRow], max_chars: int) -> str:
     return block
 
 
-async def _recall_rows(session: AsyncSession) -> list[RecallRow]:
-    """Join scores to verdicts and derive each one's setup signature."""
+async def _recall_rows(session: AsyncSession, *, model: str | None = None) -> list[RecallRow]:
+    """Join scores to verdicts and derive each one's setup signature.
+
+    Restricted to the current `BULL_MODEL` by default — the model should
+    calibrate against its *own* prior calls, not another model's.
+    """
     stmt = select(VerdictScore, Verdict).join(Verdict, VerdictScore.verdict_id == Verdict.id)
+    resolved = _resolve_model(model)
+    if resolved is not None:
+        stmt = stmt.where(Verdict.model_used == resolved)
     rows = list((await session.execute(stmt)).all())
 
     sig_cache: dict[int, dict[str, Any]] = {}
@@ -147,12 +155,13 @@ async def similar_outcomes(
     *,
     k: int = DEFAULT_K,
     max_chars: int = MAX_BLOCK_CHARS,
+    model: str | None = None,
 ) -> str:
     """The `k` most-similar past scored verdicts as a compact text block.
 
-    Returns "" when there is no scored history yet (cold start) — the caller
-    appends nothing.
+    Scoped to the current `BULL_MODEL` by default. Returns "" when there is no
+    scored history yet (cold start) — the caller appends nothing.
     """
     target = _setup_signature(facts)
-    rows = await _recall_rows(session)
+    rows = await _recall_rows(session, model=model)
     return _format_block(ticker, _rank(target, rows, ticker, k), max_chars)
