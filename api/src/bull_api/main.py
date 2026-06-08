@@ -10,6 +10,7 @@ from .routers import (
     fundamentals,
     history,
     news,
+    policy,
     prices,
     scores,
     seasonals,
@@ -36,6 +37,7 @@ app.include_router(broker.router)
 app.include_router(history.router)
 app.include_router(news.router)
 app.include_router(scores.router)
+app.include_router(policy.router)
 
 
 @app.get("/healthz")
