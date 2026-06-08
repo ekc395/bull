@@ -175,33 +175,35 @@ function OverviewTab({
       ? { from: selected.fromDate, to: lastDate }
       : null;
 
+  // Technicals gauge: same derivation as TechnicalsTab; summary only.
+  const rating =
+    prices.data != null
+      ? computeTechnicalRating(prices.data.indicators, prices.data.current_price)
+      : null;
+
+  // Single full-width column, ordered to mirror TradingView's symbol overview.
   return (
-    <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
-      <div className="min-w-0 space-y-3">
+    <div className="space-y-6">
+      <VerdictBanner verdict={verdict} />
+      <div className="space-y-3">
         <PriceChart ticker={symbol} height={560} visibleRange={visibleRange} />
         <PerformanceRangeBar perf={perf} value={range} onSelect={setRange} />
-        <div className="space-y-6 pt-3">
-          <KeyFactsToday verdict={verdict} />
-          <LatestEarningsCard ticker={symbol} />
-          <KeyFactsCard ticker={symbol} />
-          <AboutCompanyCard ticker={symbol} />
-          <FinancialsCard ticker={symbol} />
-          <SeasonalsCard ticker={symbol} />
-          <AboutCard verdict={verdict} />
-          <KeyStatsGrid ticker={symbol} />
-          <ExecuteOrderButton verdict={verdict} />
-        </div>
       </div>
-      <aside className="space-y-6">
-        <VerdictBanner verdict={verdict} />
-        <KeyLevelsMini keyLevels={verdict.key_levels} />
-        <section className="rounded-md border border-border bg-panel">
-          <h3 className="border-b border-border px-4 py-2 text-[11px] font-semibold uppercase tracking-wide text-muted">
-            Top news
-          </h3>
-          <NewsList ticker={symbol} limit={3} compact />
-        </section>
-      </aside>
+      <KeyFactsToday verdict={verdict} />
+      <AboutCard verdict={verdict} />
+      <ExecuteOrderButton verdict={verdict} />
+      <LatestEarningsCard ticker={symbol} />
+      <KeyFactsCard ticker={symbol} />
+      <AboutCompanyCard ticker={symbol} />
+      <FinancialsCard ticker={symbol} />
+      <div className="grid gap-6 lg:grid-cols-2">
+        {rating && <TechnicalsGauge rating={rating} />}
+        <AnalystGauge ticker={symbol} />
+      </div>
+      <KeyStatsGrid ticker={symbol} />
+      <KeyLevelsMini keyLevels={verdict.key_levels} />
+      <SeasonalsCard ticker={symbol} />
+      <NewsList ticker={symbol} />
     </div>
   );
 }
