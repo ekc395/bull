@@ -1,8 +1,9 @@
 """Phase 4 — Part B: outcome-conditioned prompting ("verbal RL" / Reflexion).
 
-Builds a compact "your prior calls on similar setups → realized outcome" block
-from the model's own scored verdicts, so its raw verdicts self-correct
-in-context. No weight changes; the "reward" arrives as text. Flag-gated
+Builds a compact "this system's prior calls on similar setups → realized
+outcome" block from the system's scored verdicts (pooled across models — the
+analysis model churns, the prompt + pipeline persist), so raw verdicts
+self-correct in-context. No weight changes; the "reward" arrives as text. Flag-gated
 (`BULL_OUTCOME_FEEDBACK`, default off) and appended to the *uncached* user
 message in `agent.py`, so prompt caching of the system prompt + tool schema is
 preserved.
@@ -97,8 +98,9 @@ def _format_block(ticker: str, rows: list[RecallRow], max_chars: int) -> str:
     if not rows:
         return ""
     header = (
-        "YOUR PRIOR CALLS ON SIMILAR SETUPS (realized outcomes — calibrate against them; "
-        "a track record of misses on this kind of setup should lower confidence):"
+        "THIS SYSTEM'S PRIOR CALLS ON SIMILAR SETUPS (realized outcomes — calibrate "
+        "against them; a track record of misses on this kind of setup should lower "
+        "confidence):"
     )
     lines: list[str] = []
     for r in rows:
@@ -118,8 +120,8 @@ def _format_block(ticker: str, rows: list[RecallRow], max_chars: int) -> str:
 async def _recall_rows(session: AsyncSession, *, model: str | None = None) -> list[RecallRow]:
     """Join scores to verdicts and derive each one's setup signature.
 
-    Restricted to the current `BULL_MODEL` by default — the model should
-    calibrate against its *own* prior calls, not another model's.
+    Pools every model by default — the track record belongs to the system
+    (prompt + pipeline), which outlives any single model.
     """
     stmt = select(VerdictScore, Verdict).join(Verdict, VerdictScore.verdict_id == Verdict.id)
     resolved = _resolve_model(model)
@@ -159,8 +161,8 @@ async def similar_outcomes(
 ) -> str:
     """The `k` most-similar past scored verdicts as a compact text block.
 
-    Scoped to the current `BULL_MODEL` by default. Returns "" when there is no
-    scored history yet (cold start) — the caller appends nothing.
+    Pooled across models by default. Returns "" when there is no scored
+    history yet (cold start) — the caller appends nothing.
     """
     target = _setup_signature(facts)
     rows = await _recall_rows(session, model=model)

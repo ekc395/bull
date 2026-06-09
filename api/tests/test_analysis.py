@@ -9,6 +9,7 @@ from bull_api.config import settings
 from bull_api.policy.analysis import (
     Outcome,
     _resolve_model,
+    by_model_counts,
     calibration_table,
     edge_table,
 )
@@ -136,6 +137,18 @@ def test_edge_empty_outcomes():
 
 
 def test_resolve_model_selector():
-    assert _resolve_model(None) == settings.bull_model  # default: current regime
-    assert _resolve_model("all") is None  # no filter
+    assert _resolve_model(None) is None  # default: pool every model
+    assert _resolve_model("all") is None  # legacy alias for pooling
+    assert _resolve_model("current") == settings.bull_model  # active regime
     assert _resolve_model("claude-x") == "claude-x"  # explicit passthrough
+
+
+def test_by_model_counts_groups_and_sorts():
+    outcomes = [
+        Outcome(context=_ctx(), action="BUY", horizon_days=5, return_pct=1.0, model="claude-b"),
+        Outcome(context=_ctx(), action="BUY", horizon_days=5, return_pct=2.0, model="claude-a"),
+        Outcome(context=_ctx(), action="BUY", horizon_days=5, return_pct=3.0, model="claude-b"),
+        Outcome(context=_ctx(), action="BUY", horizon_days=5, return_pct=4.0),  # no model tag
+    ]
+    assert by_model_counts(outcomes) == {"claude-a": 1, "claude-b": 2, "unknown": 1}
+    assert by_model_counts([]) == {}

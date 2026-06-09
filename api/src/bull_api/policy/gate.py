@@ -1,10 +1,11 @@
 """Phase 3 — Part A gating & sizing (the core deliverable).
 
-A fixed, auditable rule wrapped around the fixed Opus policy: given a verdict's
-bucketed `Context` and the realized track record of similar past setups, decide
-*whether* to act and *how big*. This is where P&L actually comes from
-(selectivity + sizing). No persisted model — the "fitted stats" are recomputed
-on demand from the outcome table (`fit_stats`).
+A fixed, auditable rule wrapped around the fixed prompt + pipeline (the analysis
+model behind it may change; outcomes are pooled across models): given a
+verdict's bucketed `Context` and the realized track record of similar past
+setups, decide *whether* to act and *how big*. This is where P&L actually comes
+from (selectivity + sizing). No persisted model — the "fitted stats" are
+recomputed on demand from the outcome table (`fit_stats`).
 
 Three regimes after the hard guardrails pass:
   - **exploit**  bucket has enough samples (n ≥ MIN_SAMPLES) and a positive mean
@@ -37,7 +38,8 @@ if TYPE_CHECKING:
     from ..models import Verdict
 
 # Bump when the rule below changes so persisted decisions stay comparable.
-POLICY_VERSION = "0.1.0"
+# 0.2.0: fitted stats pool outcomes across models (was: current BULL_MODEL only).
+POLICY_VERSION = "0.2.0"
 
 # --- Hard guardrails (priors from checks.py) -------------------------------
 CONF_FLOOR = 55  # confidence < 55 is coin-flip / HOLD territory (prompts.py bands)

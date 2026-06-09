@@ -24,7 +24,9 @@ async def get_calibration(
         DEFAULT_MIN_N, ge=1, le=1000, description="Min samples before a bucket is trusted"
     ),
     model: str | None = Query(
-        None, description="Model regime to analyze; defaults to current BULL_MODEL, 'all' to pool"
+        None,
+        description="Model regime to analyze; defaults to pooling every model, "
+        "'current' for the active BULL_MODEL, or a model id to slice one",
     ),
     session: AsyncSession = Depends(get_session),
 ) -> dict[str, Any]:

@@ -61,23 +61,27 @@ class Outcome:
     action: str
     horizon_days: int
     return_pct: float
+    model: str = ""  # producing model (Verdict.model_used); the tables ignore it
 
 
 def _resolve_model(model: str | None) -> str | None:
     """Map a model selector to a SQL filter value.
 
-    The learning layer fits a wrapper around a *fixed* policy, so by default it
-    only learns from verdicts produced by the current model — pooling outputs
-    from different models (or prompt regimes) blends two policies and pollutes
-    the calibration/edge stats.
+    The model churns too often for per-model scoping to ever accumulate signal,
+    so the learning layer pools outcomes across models by default: the policy
+    being learned is the *system* (prompt + facts pipeline + a Claude-family
+    model), and setup-feature edge is a property of the market and the pipeline,
+    largely model-independent. Per-model slices stay available as a diagnostic
+    so calibration divergence between models remains visible.
 
-      None  -> the current BULL_MODEL (the regime being learned).
-      "all" -> no filter (inspect every regime).
-      else  -> that specific model string.
+      None      -> no filter (pool every model; the default).
+      "current" -> the active BULL_MODEL.
+      "all"     -> alias for None (kept for existing callers/URLs).
+      else      -> that specific model string.
     """
-    if model is None:
+    if model == "current":
         return settings.bull_model
-    if model == "all":
+    if model is None or model == "all":
         return None
     return model
 
@@ -170,14 +174,23 @@ def edge_table(
     return table
 
 
+def by_model_counts(outcomes: list[Outcome]) -> dict[str, int]:
+    """Scored-row count per producing model. Pure; shows a pool's composition."""
+    counts: dict[str, int] = defaultdict(int)
+    for o in outcomes:
+        counts[o.model or "unknown"] += 1
+    return dict(sorted(counts.items()))
+
+
 async def collect_outcomes(
     session: AsyncSession, *, model: str | None = None
 ) -> list[Outcome]:
     """Join scores to verdicts and attach each verdict's bucketed context.
 
-    Restricted to the current `BULL_MODEL` by default (see `_resolve_model`).
-    Context is derived once per verdict and shared across that verdict's
-    horizons (a verdict has up to len(DEFAULT_HORIZONS) score rows).
+    Pools every model by default (see `_resolve_model`); pass `model="current"`
+    or a model string to slice one regime. Context is derived once per verdict
+    and shared across that verdict's horizons (a verdict has up to
+    len(DEFAULT_HORIZONS) score rows).
     """
     stmt = select(VerdictScore, Verdict).join(Verdict, VerdictScore.verdict_id == Verdict.id)
     resolved = _resolve_model(model)
@@ -198,6 +211,7 @@ async def collect_outcomes(
                 action=verdict.action,
                 horizon_days=score.horizon_days,
                 return_pct=score.realized_return_pct,
+                model=verdict.model_used,
             )
         )
     return outcomes
@@ -212,8 +226,8 @@ async def report(
 ) -> dict[str, Any]:
     """Full Phase-2 surface: calibration + edge over scored verdicts.
 
-    Scoped to the current `BULL_MODEL` by default; pass `model="all"` to pool
-    every regime or a specific model string to inspect one.
+    Pools every model by default; pass `model="current"` or a specific model
+    string to slice one regime. `by_model` shows the pool's composition.
     """
     outcomes = await collect_outcomes(session, model=model)
     return {
@@ -221,6 +235,7 @@ async def report(
         "min_n": min_n,
         "model": _resolve_model(model) or "all",
         "scored_rows": len(outcomes),
+        "by_model": by_model_counts(outcomes),
         "calibration": calibration_table(outcomes, threshold=threshold, min_n=min_n),
         "edge": edge_table(outcomes, threshold=threshold, min_n=min_n),
     }
@@ -251,12 +266,16 @@ async def _cli() -> None:
     import sys
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
-    model = "all" if "--all" in sys.argv else None  # default: current BULL_MODEL
+    model = None  # default: pool every model
+    if "--model" in sys.argv:  # --model <id|current> slices one regime
+        model = sys.argv[sys.argv.index("--model") + 1]
     async with SessionLocal() as session:
         r = await report(session, model=model)
+    pool = "  ".join(f"{m}={n}" for m, n in r["by_model"].items())
     print(
         f"model={r['model']}  scored_rows={r['scored_rows']}  "
         f"threshold={r['threshold_pct']}%  min_n={r['min_n']}"
+        + (f"\nby_model: {pool}" if pool else "")
     )
     if not r["scored_rows"]:
         print("\nNo scored verdicts yet — run `python -m bull_api.scoring` first.")
