@@ -159,6 +159,11 @@ class OrderResponse(BaseModel):
     status: str
     submitted_at: UTCDateTime
     filled_avg_price: float | None
+    # Bracket execution (0009). None on plain market orders / pre-bracket rows.
+    order_class: str | None = None
+    stop_price: float | None = None
+    target_price: float | None = None
+    exit_reason: str | None = None  # stop | target | time_stop | manual
 
 
 class ExecuteOrderRequest(BaseModel):

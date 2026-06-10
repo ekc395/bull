@@ -22,6 +22,10 @@ def _order_to_response(o: Order) -> OrderResponse:
         status=o.status,
         submitted_at=o.submitted_at,
         filled_avg_price=o.filled_avg_price,
+        order_class=o.order_class,
+        stop_price=o.stop_price,
+        target_price=o.target_price,
+        exit_reason=o.exit_reason,
     )
 
 

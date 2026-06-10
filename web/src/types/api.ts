@@ -26,6 +26,42 @@ export interface Report {
   reasoning: string;
 }
 
+// Algorithm-first short mode (mirrors AlgoEvaluation in schemas.py).
+
+export interface StrategyCheck {
+  passed: boolean;
+  value?: unknown;
+  threshold?: unknown;
+}
+
+export interface StrategyEvaluation {
+  strategy: string;
+  candidate_action: "BUY" | "HOLD";
+  base_confidence: number;
+  reason: string;
+  filters: Record<string, StrategyCheck>;
+  setup: Record<string, StrategyCheck>;
+  entry: number | null;
+  stop: number | null;
+  target: number | null;
+  reward_risk: number | null;
+  max_hold_trading_days: number;
+}
+
+export interface LlmReview {
+  veto: boolean;
+  veto_reason: string | null;
+  raw_llm_action: string;
+  raw_llm_confidence: number;
+  coercions: string[];
+}
+
+export interface AlgoEvaluation {
+  active_strategy: string;
+  evaluations: Record<string, StrategyEvaluation>;
+  llm_review: LlmReview | null;
+}
+
 export interface VerdictResponse {
   id: number;
   ticker: string;
@@ -37,6 +73,8 @@ export interface VerdictResponse {
   created_at: string;
   model_used: string;
   timeframe: Timeframe;
+  // Present only on short-mode verdicts from the strategy layer onward.
+  algo?: AlgoEvaluation | null;
 }
 
 export interface AnalyzeRequest {
@@ -80,6 +118,11 @@ export interface OrderResponse {
   status: string;
   submitted_at: string;
   filled_avg_price: number | null;
+  // Bracket execution. Null on plain market orders / pre-bracket rows.
+  order_class?: string | null;
+  stop_price?: number | null;
+  target_price?: number | null;
+  exit_reason?: string | null; // stop | target | time_stop | manual
 }
 
 export interface ExecuteOrderRequest {
@@ -223,6 +266,39 @@ export interface SeasonalYear {
 export interface SeasonalsResponse {
   ticker: string;
   years: SeasonalYear[];
+}
+
+// Watchlist (GET /watchlist, POST /watchlist/analyze).
+
+export interface WatchlistItem {
+  ticker: string;
+  verdict_id: number | null;
+  action: Action | null;
+  confidence: number | null;
+  candidate_action: string | null;
+  active_strategy: string | null;
+  created_at: string | null;
+  fresh_today: boolean; // analyzed this trading day → a batch run is free
+}
+
+export interface WatchlistResponse {
+  active_strategy: string;
+  items: WatchlistItem[];
+}
+
+export interface WatchlistAnalyzeItem {
+  ticker: string;
+  cached: boolean | null; // null when the analysis errored
+  verdict_id: number | null;
+  action: Action | null;
+  confidence: number | null;
+  candidate_action: string | null;
+  error: string | null;
+}
+
+export interface WatchlistAnalyzeResponse {
+  results: WatchlistAnalyzeItem[];
+  llm_calls_made: number;
 }
 
 export interface NewsItem {
