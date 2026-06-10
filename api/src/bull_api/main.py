@@ -13,6 +13,7 @@ from .routers import (
     policy,
     prices,
     scores,
+    screen,
     seasonals,
     verdicts,
 )
@@ -37,6 +38,7 @@ app.include_router(broker.router)
 app.include_router(history.router)
 app.include_router(news.router)
 app.include_router(scores.router)
+app.include_router(screen.router)
 app.include_router(policy.router)
 
 

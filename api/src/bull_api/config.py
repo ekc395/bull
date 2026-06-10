@@ -31,6 +31,12 @@ class Settings(BaseSettings):
     # Fixed testing universe: comma-separated tickers for the watchlist batch
     # run and the backtest default. 8 liquid names across sectors; edit freely.
     bull_watchlist: str = "AAPL,MSFT,NVDA,AMZN,META,JPM,UNH,XOM"
+    # Screener universe (bull_api.screen / GET /screen). Empty = the current
+    # S&P 500 constituents (fetched once per trading day; index membership is
+    # the quality/liquidity floor); set a comma-separated list to pin it
+    # manually. Size 0 = scan the whole index; >0 trims for quicker runs.
+    bull_screen_universe: str = ""
+    bull_screen_size: int = 0
 
     database_url: str = "sqlite+aiosqlite:///./bull.db"
 
