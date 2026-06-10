@@ -37,7 +37,7 @@ export function RecentVerdicts({ limit = 20 }: { limit?: number }) {
         </p>
       )}
       {verdicts.data && verdicts.data.length > 0 && (
-        <ul className="min-h-0 flex-1 overflow-y-auto">
+        <ul className="max-h-[480px] min-h-0 flex-1 overflow-y-auto">
           {verdicts.data.map((v) => (
             <li key={v.id} className="border-b border-border last:border-0">
               <Link
