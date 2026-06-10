@@ -7,11 +7,13 @@ from functools import lru_cache
 from typing import Any, TypedDict
 
 from alpaca.trading.client import TradingClient
-from alpaca.trading.enums import OrderSide, QueryOrderStatus, TimeInForce
+from alpaca.trading.enums import OrderClass, OrderSide, QueryOrderStatus, TimeInForce
 from alpaca.trading.requests import (
     GetOrdersRequest,
     GetPortfolioHistoryRequest,
     MarketOrderRequest,
+    StopLossRequest,
+    TakeProfitRequest,
 )
 
 from ..config import settings
@@ -118,6 +120,63 @@ def place_order(
         "submitted_at": order.submitted_at,
         "filled_avg_price": _f(order.filled_avg_price),
     }
+
+
+def place_bracket_order(
+    symbol: str,
+    qty: int,
+    stop_price: float,
+    target_price: float,
+) -> dict[str, Any]:
+    """Market BUY with attached GTC stop-loss + take-profit legs — Alpaca
+    executes the exits server-side, no polling needed on our end.
+
+    Bracket constraints: whole-share qty (no notional, no fractionals) and the
+    legs must straddle the market (stop below, target above). Always paper.
+    """
+    if qty < 1:
+        raise ValueError("Bracket orders need a whole-share qty >= 1")
+    if stop_price >= target_price:
+        raise ValueError("stop_price must be below target_price")
+    request = MarketOrderRequest(
+        symbol=symbol.upper(),
+        qty=int(qty),
+        side=OrderSide.BUY,
+        time_in_force=TimeInForce.GTC,  # legs must outlive the entry day
+        order_class=OrderClass.BRACKET,
+        take_profit=TakeProfitRequest(limit_price=round(target_price, 2)),
+        stop_loss=StopLossRequest(stop_price=round(stop_price, 2)),
+    )
+    order = _client().submit_order(request)
+    legs: dict[str, str] = {}
+    for leg in order.legs or []:
+        leg_type = _enum_value(getattr(leg, "order_type", None) or getattr(leg, "type", ""))
+        if leg_type == "limit":
+            legs["take_profit"] = str(leg.id)
+        elif leg_type == "stop":
+            legs["stop_loss"] = str(leg.id)
+    return {
+        "alpaca_order_id": str(order.id),
+        "symbol": order.symbol,
+        "side": OrderSide.BUY.value,
+        "qty": _f(order.qty),
+        "notional": None,
+        "status": _enum_value(order.status),
+        "submitted_at": order.submitted_at,
+        "filled_avg_price": _f(order.filled_avg_price),
+        "legs": legs,
+    }
+
+
+def cancel_open_orders(symbol: str) -> int:
+    """Cancel every open order for `symbol` (e.g. live bracket legs before a
+    close — Alpaca rejects closing shares that are held by open orders).
+    Returns the number of cancellations requested."""
+    request = GetOrdersRequest(status=QueryOrderStatus.OPEN, symbols=[symbol.upper()])
+    open_orders = _client().get_orders(filter=request)
+    for o in open_orders:
+        _client().cancel_order_by_id(o.id)
+    return len(open_orders)
 
 
 def close_position(symbol: str) -> dict[str, Any]:

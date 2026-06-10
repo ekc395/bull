@@ -1,8 +1,10 @@
 """Alpaca paper-trading endpoints: account, positions, orders."""
 
 import asyncio
+import logging
 from typing import Any
 
+import numpy as np
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -22,8 +24,10 @@ from ..schemas import (
     PortfolioHistoryResponse,
     PositionResponse,
 )
-from ..time import now_utc
+from ..strategy import MAX_HOLD_TRADING_DAYS
+from ..time import now_utc, trading_day
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
@@ -128,9 +132,58 @@ async def place_order(req: ExecuteOrderRequest, session: AsyncSession = Depends(
                 status_code=400, detail=f"Computed notional ${notional} is non-positive"
             )
 
-    alpaca_resp = await asyncio.to_thread(
-        alpaca.place_order, verdict.ticker, side, notional, qty
+    # Short-mode strategy BUYs execute as bracket orders: the rule's stop and
+    # target become GTC legs and Alpaca runs the exits server-side. Everything
+    # else keeps the plain market path.
+    algo = verdict.algo_json or {}
+    active_eval = (algo.get("evaluations") or {}).get(algo.get("active_strategy") or "")
+    bracket_plan = (
+        active_eval
+        if (
+            verdict.timeframe == "short"
+            and side == "buy"
+            and verdict.candidate_action == "BUY"
+            and active_eval is not None
+            and active_eval.get("stop") is not None
+            and active_eval.get("target") is not None
+        )
+        else None
     )
+
+    if bracket_plan is not None:
+        if qty is not None:
+            shares = int(qty)  # brackets reject fractionals — floor
+        else:
+            prices = (verdict.facts_bundle_json or {}).get("prices") or []
+            last_close = prices[-1].get("close") if prices else None
+            if not last_close:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Verdict has no last close to size a bracket order from",
+                )
+            shares = int((notional or 0) // last_close)
+        if shares < 1:
+            # No silent fallback to an unprotected market order: a strategy
+            # entry without its stop/target legs would be a different trade.
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    "Position size is below one whole share and bracket orders "
+                    "cannot use fractional/notional amounts. Pass a larger "
+                    "notional or qty to execute this strategy trade."
+                ),
+            )
+        alpaca_resp = await asyncio.to_thread(
+            alpaca.place_bracket_order,
+            verdict.ticker,
+            shares,
+            bracket_plan["stop"],
+            bracket_plan["target"],
+        )
+    else:
+        alpaca_resp = await asyncio.to_thread(
+            alpaca.place_order, verdict.ticker, side, notional, qty
+        )
 
     order = Order(
         verdict_id=verdict.id,
@@ -142,6 +195,10 @@ async def place_order(req: ExecuteOrderRequest, session: AsyncSession = Depends(
         status=alpaca_resp["status"],
         submitted_at=alpaca_resp["submitted_at"] or now_utc(),
         filled_avg_price=alpaca_resp.get("filled_avg_price") or None,
+        order_class="bracket" if bracket_plan else "simple",
+        stop_price=bracket_plan["stop"] if bracket_plan else None,
+        target_price=bracket_plan["target"] if bracket_plan else None,
+        legs_json=alpaca_resp.get("legs") if bracket_plan else None,
     )
     persisted = await orepo.insert(order, session)
     return _order_to_response(persisted)
@@ -153,6 +210,9 @@ async def close_position(symbol: str, session: AsyncSession = Depends(get_sessio
     if not symbol:
         raise HTTPException(status_code=400, detail="symbol is required")
     try:
+        # Live bracket legs hold the shares — Alpaca rejects the close until
+        # they're cancelled. No-op for positions without open orders.
+        await asyncio.to_thread(alpaca.cancel_open_orders, symbol)
         resp = await asyncio.to_thread(alpaca.close_position, symbol)
     except RuntimeError as e:
         raise HTTPException(status_code=503, detail=str(e)) from e
@@ -168,6 +228,104 @@ async def close_position(symbol: str, session: AsyncSession = Depends(get_sessio
         status=resp["status"],
         submitted_at=resp["submitted_at"] or now_utc(),
         filled_avg_price=None,
+        order_class="simple",
+        exit_reason="manual",
     )
     await orepo.insert(order, session)
     return resp
+
+
+@router.post("/positions/sweep")
+async def sweep_positions(session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    """Time-stop enforcement + exit reconciliation. Manual trigger (cron it
+    yourself if you want), same convention as scoring.
+
+    1. Any open position whose originating bracket entry is older than
+       MAX_HOLD_TRADING_DAYS gets its legs cancelled and is closed at market
+       (`exit_reason="time_stop"`). Stop/target exits need no sweep — Alpaca
+       fills those server-side.
+    2. Filled bracket legs that happened Alpaca-side since the last sweep are
+       inserted as local sell Orders (linked to the entry's verdict) so the
+       trade journal shows the full round trip.
+    """
+    try:
+        positions = await asyncio.to_thread(alpaca.get_positions)
+        recent_alpaca = await asyncio.to_thread(alpaca.get_recent_orders, 100)
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e)) from e
+
+    local = await orepo.list_recent(1000, session)  # newest first
+    known_ids = {o.alpaca_order_id for o in local}
+    today = trading_day()
+
+    closed: list[str] = []
+    for pos in positions:
+        symbol = pos["symbol"]
+        entry = next(
+            (
+                o
+                for o in local
+                if o.ticker == symbol and o.order_class == "bracket" and o.side == "buy"
+            ),
+            None,
+        )
+        if entry is None:
+            continue  # not a strategy trade — no time stop applies
+        age_days = int(np.busday_count(trading_day(entry.submitted_at), today))
+        if age_days < MAX_HOLD_TRADING_DAYS:
+            continue
+        await asyncio.to_thread(alpaca.cancel_open_orders, symbol)
+        resp = await asyncio.to_thread(alpaca.close_position, symbol)
+        await orepo.insert(
+            Order(
+                verdict_id=entry.verdict_id,
+                alpaca_order_id=resp["alpaca_order_id"],
+                ticker=symbol,
+                side="sell",
+                status=resp["status"],
+                submitted_at=resp["submitted_at"] or now_utc(),
+                order_class="simple",
+                exit_reason="time_stop",
+            ),
+            session,
+        )
+        closed.append(symbol)
+        logger.info("sweep: time-stopped %s after %d trading days", symbol, age_days)
+
+    # Reconcile: map known bracket leg ids → exit reason, insert missing fills.
+    leg_index: dict[str, tuple[Order, str]] = {}
+    for o in local:
+        if o.order_class == "bracket" and o.legs_json:
+            if o.legs_json.get("stop_loss"):
+                leg_index[o.legs_json["stop_loss"]] = (o, "stop")
+            if o.legs_json.get("take_profit"):
+                leg_index[o.legs_json["take_profit"]] = (o, "target")
+
+    reconciled: list[str] = []
+    for r in recent_alpaca:
+        rid = r["alpaca_order_id"]
+        if rid in known_ids or rid not in leg_index or r["status"] != "filled":
+            continue
+        parent, reason = leg_index[rid]
+        await orepo.insert(
+            Order(
+                verdict_id=parent.verdict_id,
+                alpaca_order_id=rid,
+                ticker=r["symbol"],
+                side="sell",
+                qty=r.get("qty") or None,
+                status=r["status"],
+                submitted_at=r["submitted_at"] or now_utc(),
+                filled_avg_price=r.get("filled_avg_price") or None,
+                order_class="simple",
+                exit_reason=reason,
+            ),
+            session,
+        )
+        reconciled.append(rid)
+
+    return {
+        "checked_positions": len(positions),
+        "closed": closed,
+        "reconciled": reconciled,
+    }
