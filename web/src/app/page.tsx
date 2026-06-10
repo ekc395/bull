@@ -3,6 +3,7 @@
 import { PortfolioHero } from "@/components/PortfolioHero";
 import { PositionsTable } from "@/components/PositionsTable";
 import { RecentVerdicts } from "@/components/RecentVerdicts";
+import { ScreenerCard } from "@/components/ScreenerCard";
 import { TickerSearch } from "@/components/TickerSearch";
 import { TimeframeToggle } from "@/components/TimeframeToggle";
 import { TradeJournal } from "@/components/TradeJournal";
@@ -47,6 +48,8 @@ export default function DashboardPage() {
             </p>
             <TickerSearch timeframe={timeframe} />
           </section>
+
+          <ScreenerCard />
 
           <RecentVerdicts limit={20} />
         </aside>

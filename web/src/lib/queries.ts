@@ -16,6 +16,7 @@ import type {
   PortfolioHistoryResponse,
   PositionResponse,
   PricesResponse,
+  ScreenResponse,
   Timeframe,
   VerdictResponse,
 } from "../types/api";
@@ -40,6 +41,7 @@ export const qk = {
     ["analyze", ticker.toUpperCase(), timeframe] as const,
   portfolioHistory: (period: PortfolioHistoryPeriod) =>
     ["portfolio-history", period] as const,
+  screen: ["screen"] as const,
 };
 
 // ---- Polling reads ----
@@ -167,6 +169,20 @@ export function useAnalyzeQuery(
       return verdict;
     },
     enabled: !!ticker,
+    staleTime: Infinity,
+    retry: false,
+  });
+}
+
+// Free strategy screen over the S&P 500 (no LLM). NEVER auto-fires: the first
+// run of a trading day fetches ~500 price histories (minutes); the user
+// triggers it via refetch(). Same-day re-runs hit the backend's per-day
+// caches and return in seconds. Result kept for the session (staleTime ∞).
+export function useScreen() {
+  return useQuery({
+    queryKey: qk.screen,
+    queryFn: () => apiFetch<ScreenResponse>("/screen"),
+    enabled: false,
     staleTime: Infinity,
     retry: false,
   });

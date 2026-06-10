@@ -268,6 +268,36 @@ export interface SeasonalsResponse {
   years: SeasonalYear[];
 }
 
+// Screener (GET /screen) — mirrors bull_api.screen.run_screen output.
+
+export interface ScreenCandidate {
+  ticker: string;
+  strategy: string;
+  base_confidence: number;
+  reason: string;
+  entry: number | null;
+  stop: number | null;
+  target: number | null;
+  reward_risk: number | null;
+  filters: Record<string, StrategyCheck>;
+  setup: Record<string, StrategyCheck>;
+  other_strategies: Record<string, string>;
+}
+
+export interface ScreenHold {
+  ticker: string;
+  reason: string;
+}
+
+export interface ScreenResponse {
+  as_of: string;
+  active_strategy: string;
+  universe_size: number;
+  evaluated: number;
+  candidates: ScreenCandidate[];
+  holds: ScreenHold[];
+}
+
 // Watchlist (GET /watchlist, POST /watchlist/analyze).
 
 export interface WatchlistItem {
