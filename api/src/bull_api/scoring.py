@@ -163,13 +163,36 @@ def _hit_stats(hits: list[bool]) -> dict[str, float | int | None]:
 
 
 async def summary(session: AsyncSession, *, threshold: float = 0.0) -> dict[str, Any]:
-    """Hit rate per (action, horizon) plus a per-model breakdown."""
+    """Hit rate per (action, horizon), per-model breakdown, and — for
+    short-mode rows carrying the strategy layer — the forward tournament
+    table (`by_strategy`) plus the LLM-overlay comparison (`algo_vs_final`).
+
+    The forward tables are the out-of-sample check on the backtest ranking
+    and the ONLY honest measure of the LLM veto/shade layer (which can't be
+    backtested — the model knows historical outcomes). Fixed 5/20d horizons:
+    a uniform measuring stick, not a per-strategy exit simulation; the
+    backtester (`bull_api.backtest`) simulates the actual exits.
+    """
     stmt = select(VerdictScore, Verdict).join(Verdict, VerdictScore.verdict_id == Verdict.id)
     rows = list((await session.execute(stmt)).all())
 
     overall: dict[tuple[str, int], list[bool]] = defaultdict(list)
     by_model: dict[tuple[str, str, int], list[bool]] = defaultdict(list)
     rets: dict[tuple[str, int], list[float]] = defaultdict(list)
+
+    # by_strategy: every registered strategy's candidates graded on the same
+    # scored verdicts (candidates were stored per-strategy in algo_json).
+    strat_evaluated: dict[tuple[str, int], int] = defaultdict(int)
+    strat_buy_hits: dict[tuple[str, int], list[bool]] = defaultdict(list)
+    strat_buy_rets: dict[tuple[str, int], list[float]] = defaultdict(list)
+
+    # algo_vs_final: the ACTIVE candidate vs the LLM-reviewed final verdict
+    # over the identical row subset, plus veto outcomes.
+    cand_hits: dict[tuple[str, int], list[bool]] = defaultdict(list)
+    final_hits: dict[tuple[str, int], list[bool]] = defaultdict(list)
+    seen_verdicts: set[int] = set()
+    agreements = 0
+    veto_rets: dict[int, list[float]] = defaultdict(list)
 
     for score, verdict in rows:
         hit = _classify_hit(verdict.action, score.realized_return_pct, threshold)
@@ -180,6 +203,32 @@ async def summary(session: AsyncSession, *, threshold: float = 0.0) -> dict[str,
         by_model[(verdict.model_used, *key)].append(hit)
         rets[key].append(score.realized_return_pct)
 
+        algo = verdict.algo_json or {}
+        for name, ev in (algo.get("evaluations") or {}).items():
+            cand = ev.get("candidate_action")
+            skey = (name, score.horizon_days)
+            strat_evaluated[skey] += 1
+            if cand == "BUY":
+                buy_hit = _classify_hit(cand, score.realized_return_pct, threshold)
+                if buy_hit is not None:
+                    strat_buy_hits[skey].append(buy_hit)
+                    strat_buy_rets[skey].append(score.realized_return_pct)
+
+        if verdict.candidate_action:
+            c_hit = _classify_hit(
+                verdict.candidate_action, score.realized_return_pct, threshold
+            )
+            if c_hit is not None:
+                cand_hits[(verdict.candidate_action, score.horizon_days)].append(c_hit)
+            final_hits[key].append(hit)
+            if verdict.id not in seen_verdicts:
+                seen_verdicts.add(verdict.id)
+                if verdict.candidate_action == verdict.action:
+                    agreements += 1
+            review = algo.get("llm_review") or {}
+            if review.get("veto") and verdict.candidate_action == "BUY":
+                veto_rets[score.horizon_days].append(score.realized_return_pct)
+
     return {
         "threshold_pct": threshold,
         "scored_rows": len(rows),
@@ -189,6 +238,32 @@ async def summary(session: AsyncSession, *, threshold: float = 0.0) -> dict[str,
         },
         "by_model": {
             f"{m}|{a}@{h}d": _hit_stats(v) for (m, a, h), v in sorted(by_model.items())
+        },
+        "by_strategy": {
+            f"{name}@{h}d": {
+                "evaluated": strat_evaluated[(name, h)],
+                "buys": len(strat_buy_hits[(name, h)]),
+                **_hit_stats(strat_buy_hits[(name, h)]),
+                **_ret_stats(strat_buy_rets[(name, h)]),
+            }
+            for (name, h) in sorted(strat_evaluated)
+        },
+        "algo_vs_final": {
+            "candidate": {
+                f"{a}@{h}d": _hit_stats(v) for (a, h), v in sorted(cand_hits.items())
+            },
+            "final": {
+                f"{a}@{h}d": _hit_stats(v) for (a, h), v in sorted(final_hits.items())
+            },
+            "verdicts_compared": len(seen_verdicts),
+            "agreement_rate": round(agreements / len(seen_verdicts), 4)
+            if seen_verdicts
+            else None,
+            # Mean realized return of vetoed BUY candidates. Negative ⇒ the
+            # LLM's vetoes avoided losses (it is earning its tokens).
+            "vetoed_buys": {
+                f"{h}d": _ret_stats(v) for h, v in sorted(veto_rets.items())
+            },
         },
     }
 
@@ -213,6 +288,27 @@ async def _cli() -> None:
             print("\nBy model:")
             for k, v in s["by_model"].items():
                 print(f"  {k:>40s}  n={v['n']:>3d}  hit={v['hit_rate']!s:>6s}")
+        if s["by_strategy"]:
+            print("\nBy strategy (forward; candidates graded at fixed horizons):")
+            for k, v in s["by_strategy"].items():
+                print(
+                    f"  {k:>18s}  evaluated={v['evaluated']:>3d}  buys={v['buys']:>3d}"
+                    f"  hit={v['hit_rate']!s:>6s}  mean={v['mean_return_pct']!s:>8s}%"
+                )
+        avf = s["algo_vs_final"]
+        if avf["verdicts_compared"]:
+            print(
+                f"\nAlgo vs final: verdicts={avf['verdicts_compared']}"
+                f"  agreement={avf['agreement_rate']!s}"
+            )
+            for label in ("candidate", "final"):
+                for k, v in avf[label].items():
+                    print(f"  {label:>9s} {k:>9s}  n={v['n']:>3d}  hit={v['hit_rate']!s:>6s}")
+            for k, v in avf["vetoed_buys"].items():
+                print(
+                    f"  vetoed BUYs @{k}: n={v['n']}  mean={v['mean_return_pct']!s}%"
+                    "  (negative ⇒ vetoes added value)"
+                )
 
 
 if __name__ == "__main__":
