@@ -1,7 +1,7 @@
 """Pydantic request/response schemas. Mirrors `web/src/types/api.ts`."""
 
 from datetime import datetime, timezone
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, Field, PlainSerializer, model_validator
 
@@ -61,6 +61,49 @@ class PolicyDecisionResponse(BaseModel):
     policy_version: str
 
 
+class StrategyCheck(BaseModel):
+    """One filter/setup line item from a strategy's checklist."""
+
+    passed: bool
+    value: Any = None
+    threshold: Any = None
+
+
+class StrategyEvaluation(BaseModel):
+    """A deterministic strategy's full evaluation of one facts bundle."""
+
+    strategy: str
+    candidate_action: Literal["BUY", "HOLD"]
+    base_confidence: int
+    reason: str
+    filters: dict[str, StrategyCheck]
+    setup: dict[str, StrategyCheck]
+    entry: float | None = None
+    stop: float | None = None
+    target: float | None = None
+    reward_risk: float | None = None
+    max_hold_trading_days: int
+
+
+class LlmReview(BaseModel):
+    """What the LLM did with the active candidate (veto/shade/coercions)."""
+
+    veto: bool
+    veto_reason: str | None = None
+    raw_llm_action: str
+    raw_llm_confidence: int
+    coercions: list[str] = []
+
+
+class AlgoEvaluation(BaseModel):
+    """Short-mode algorithm-first record: every strategy's evaluation, which
+    one was active, and the LLM review. Mirrors Verdict.algo_json."""
+
+    active_strategy: str
+    evaluations: dict[str, StrategyEvaluation]
+    llm_review: LlmReview | None = None
+
+
 class VerdictResponse(BaseModel):
     id: int
     ticker: str
@@ -73,6 +116,8 @@ class VerdictResponse(BaseModel):
     model_used: str
     timeframe: Timeframe = "medium"
     policy: PolicyDecisionResponse | None = None
+    # Populated only for short-mode verdicts from the strategy layer onward.
+    algo: AlgoEvaluation | None = None
 
 
 class AnalyzeRequest(BaseModel):
@@ -126,5 +171,38 @@ class ExecuteOrderRequest(BaseModel):
         if self.notional is not None and self.qty is not None:
             raise ValueError("Provide either notional or qty, not both")
         return self
+
+
+class WatchlistItemResponse(BaseModel):
+    """One watchlist ticker + a summary of its latest short-mode verdict."""
+
+    ticker: str
+    verdict_id: int | None = None
+    action: Action | None = None
+    confidence: int | None = None
+    candidate_action: str | None = None
+    active_strategy: str | None = None
+    created_at: UTCDateTime | None = None
+    fresh_today: bool = False  # analyzed this trading day → a batch run is free
+
+
+class WatchlistResponse(BaseModel):
+    active_strategy: str
+    items: list[WatchlistItemResponse]
+
+
+class WatchlistAnalyzeItem(BaseModel):
+    ticker: str
+    cached: bool | None = None  # None when the analysis errored
+    verdict_id: int | None = None
+    action: Action | None = None
+    confidence: int | None = None
+    candidate_action: str | None = None
+    error: str | None = None
+
+
+class WatchlistAnalyzeResponse(BaseModel):
+    results: list[WatchlistAnalyzeItem]
+    llm_calls_made: int  # the paid-call count — spend stays visible
 
 

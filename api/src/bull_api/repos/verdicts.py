@@ -32,6 +32,20 @@ async def get_for_today(
     return (await session.execute(stmt)).scalar_one_or_none()
 
 
+async def latest_for(
+    ticker: str, session: AsyncSession, *, timeframe: str
+) -> Verdict | None:
+    """Most recent Verdict for `(ticker, timeframe)` regardless of trading day.
+    Watchlist summaries use this; the daily cache lookup is `get_for_today`."""
+    stmt = (
+        select(Verdict)
+        .where(Verdict.ticker == ticker.upper(), Verdict.timeframe == timeframe)
+        .order_by(desc(Verdict.created_at))
+        .limit(1)
+    )
+    return (await session.execute(stmt)).scalar_one_or_none()
+
+
 async def get_by_id(verdict_id: int, session: AsyncSession) -> Verdict | None:
     return await session.get(Verdict, verdict_id)
 

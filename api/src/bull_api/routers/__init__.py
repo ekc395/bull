@@ -2,7 +2,7 @@
 
 from ..models import Verdict
 from ..policy.gate import PolicyDecision
-from ..schemas import PolicyDecisionResponse, VerdictResponse
+from ..schemas import AlgoEvaluation, PolicyDecisionResponse, VerdictResponse
 
 
 def verdict_to_response(
@@ -11,7 +11,8 @@ def verdict_to_response(
     """Map a Verdict ORM row onto the public response schema.
 
     `policy` is the optional advisory gating/sizing decision (Phase 3); when
-    omitted the response's `policy` field stays None.
+    omitted the response's `policy` field stays None. `algo` is populated for
+    short-mode verdicts that carry the strategy layer's record (0009+ rows).
     """
     return VerdictResponse(
         id=v.id,
@@ -24,6 +25,7 @@ def verdict_to_response(
         created_at=v.created_at,
         model_used=v.model_used,
         timeframe=v.timeframe,  # type: ignore[arg-type]
+        algo=AlgoEvaluation(**v.algo_json) if v.algo_json else None,
         policy=(
             PolicyDecisionResponse(
                 act=policy.act,
