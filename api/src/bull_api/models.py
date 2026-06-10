@@ -36,6 +36,14 @@ class Verdict(Base):
     raw_response_json: Mapped[dict[str, Any]] = mapped_column(JSON)
     facts_bundle_json: Mapped[dict[str, Any]] = mapped_column(JSON)
 
+    # Algorithm-first short mode (migration 0009). NULL = medium/long row or a
+    # short verdict from before the strategy layer. `candidate_*` mirror the
+    # ACTIVE strategy's decision (queryable for the scores comparison);
+    # `algo_json` holds every strategy's evaluation + the LLM review record.
+    candidate_action: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    candidate_confidence: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    algo_json: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+
 
 class Order(Base):
     __tablename__ = "orders"
@@ -51,6 +59,15 @@ class Order(Base):
     submitted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     filled_avg_price: Mapped[float | None]
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
+
+    # Bracket execution for short-mode strategy entries (migration 0009).
+    # NULL = plain market order from before brackets / non-strategy verdicts.
+    order_class: Mapped[str | None] = mapped_column(String(8), nullable=True)  # simple | bracket
+    stop_price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    target_price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    legs_json: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)  # Alpaca leg ids
+    # On sell rows: stop | target | time_stop | manual (best-effort attribution).
+    exit_reason: Mapped[str | None] = mapped_column(String(16), nullable=True)
 
     verdict: Mapped["Verdict | None"] = relationship()
 

@@ -20,6 +20,16 @@ class Settings(BaseSettings):
     # message. Default off — it adds input tokens per analysis.
     bull_outcome_feedback: bool = False
 
+    # Algorithm-first short mode. The active strategy supplies the candidate
+    # the LLM reviews, the executed trade, and the bracket exit levels; every
+    # registered strategy is still evaluated and stored for the tournament.
+    # Must name a key in strategy.REGISTRY (agent.py falls back to the first
+    # registered strategy with a logged warning if it doesn't).
+    bull_active_strategy: str = "pullback-v1"
+    # Fixed testing universe: comma-separated tickers for the watchlist batch
+    # run and the backtest default. 8 liquid names across sectors; edit freely.
+    bull_watchlist: str = "AAPL,MSFT,NVDA,AMZN,META,JPM,UNH,XOM"
+
     database_url: str = "sqlite+aiosqlite:///./bull.db"
 
 
