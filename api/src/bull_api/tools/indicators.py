@@ -1,6 +1,5 @@
 """Technical indicators computed via pandas rolling windows. No ta-lib dep."""
 
-from math import isnan
 from typing import TypedDict
 
 import pandas as pd
@@ -22,7 +21,9 @@ class IndicatorSnapshot(TypedDict):
 
 
 def _f(x: float) -> float | None:
-    return None if x is None or isnan(x) else float(x)
+    # pd.isna covers float NaN AND pd.NA — RSI yields NA when a window has no
+    # down days (avg_loss 0 → rs NA), which math.isnan cannot handle.
+    return None if x is None or pd.isna(x) else float(x)
 
 
 def _wilder(s: pd.Series, period: int) -> pd.Series:
