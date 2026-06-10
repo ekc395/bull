@@ -4,7 +4,7 @@ Trend-following pullback entry (Weinstein Stage 2 / Minervini SEPA school):
 an uptrending name that has pulled back near a support cluster with cooled-off
 momentum, where the deterministic S/R geometry pays ≥ 2:1 to the next major
 resistance. Cannot fire at all-time highs (no resistance above ⇒ no target) —
-that regime belongs to breakout-v1.
+that regime belongs to the Donchian-breakout style (turtle-20-v1).
 """
 
 from typing import Any

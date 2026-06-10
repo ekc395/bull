@@ -14,9 +14,9 @@ Bracket-framework adaptations (flagged deviations):
   - entry: signal on the daily close above the prior 20-bar high, filled at
     the next open (the Turtles entered intraday on the tick through the
     level).
-Distinct from breakout-v1 on purpose: shorter window, no volume condition,
-and pure ATR risk geometry instead of S/R levels — a clean test of "does the
-classic turtle entry still carry edge".
+Pure ATR risk geometry, no volume condition, no S/R levels — a clean test of
+"does the classic turtle entry still carry edge". (It outlived breakout-v1,
+a 60-bar volume-confirmed variant pruned in the 2026-06 tournament.)
 """
 
 from typing import Any

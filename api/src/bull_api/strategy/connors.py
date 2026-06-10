@@ -15,8 +15,8 @@ SMA", neither of which a bracket can express):
   - target: 1.0 × ATR above entry — a one-volatility-unit snap-back proxy.
   - time stop: 5 bars — does the "exit regardless" job of Connors' exits.
 By construction reward:risk is ~0.4:1; that is the point — this is a
-high-win-rate/low-payoff style, the mirror image of pullback/breakout. No
-R:R floor is applied; the tournament judges the result.
+high-win-rate/low-payoff style, the mirror image of the trend entries
+(pullback/turtle). No R:R floor is applied; the tournament judges the result.
 """
 
 from typing import Any
