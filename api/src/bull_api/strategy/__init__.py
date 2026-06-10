@@ -6,7 +6,7 @@ reverse. `REGISTRY` preserves insertion order (dict) — the UI lists them in
 this order.
 """
 
-from . import bounce, breakout, pullback
+from . import bounce, breakout, pullback, wyckoff
 from .base import (
     LLM_SHADE_BAND,
     MAX_HOLD_TRADING_DAYS,
@@ -19,6 +19,7 @@ REGISTRY: dict[str, StrategyFn] = {
     pullback.NAME: pullback.evaluate,
     breakout.NAME: breakout.evaluate,
     bounce.NAME: bounce.evaluate,
+    wyckoff.NAME: wyckoff.evaluate,
 }
 
 __all__ = [

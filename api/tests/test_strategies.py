@@ -1,7 +1,14 @@
 """Strategy framework: regime filters, the three entry rules, LLM-review
 enforcement. Synthetic facts bundles, same pattern as test_gate.py."""
 
-from bull_api.strategy import REGISTRY, bounce, breakout, enforce_llm_review, pullback
+from bull_api.strategy import (
+    REGISTRY,
+    bounce,
+    breakout,
+    enforce_llm_review,
+    pullback,
+    wyckoff,
+)
 from bull_api.strategy.base import (
     HOLD_BASE_CONFIDENCE,
     LLM_SHADE_BAND,
@@ -49,7 +56,12 @@ def hold_with(decision: StrategyDecision, failed: str) -> None:
 
 
 def test_registry_contents():
-    assert list(REGISTRY) == ["pullback-v1", "breakout-v1", "bounce-v1"]
+    assert list(REGISTRY) == [
+        "pullback-v1",
+        "breakout-v1",
+        "bounce-v1",
+        "wyckoff-spring-v1",
+    ]
 
 
 # --- shared regime filters (exercised through pullback) -------------------------
@@ -263,6 +275,89 @@ def test_bounce_reward_too_thin():
     facts = bounce_bundle()
     facts["support_resistance"]["resistance"][0]["price"] = 101.0  # 0.5:1
     hold_with(bounce.evaluate(facts), "reward_risk")
+
+
+# --- wyckoff-spring-v1 -------------------------------------------------------------
+
+
+def wyckoff_bundle() -> dict:
+    """A 25-bar trading range (support 100, top 108) + a 5-bar spring window:
+    undercut to 99.7 on quiet volume, last close 100.8 back inside the range."""
+    range_bar = {"open": 103.0, "high": 108.0, "low": 100.0, "close": 104.0, "volume": 1_000_000}
+    spring_window = [
+        {"open": 102.0, "high": 103.0, "low": 100.5, "close": 102.0, "volume": 1_000_000},
+        {"open": 102.0, "high": 102.5, "low": 100.6, "close": 101.5, "volume": 1_000_000},
+        {"open": 101.0, "high": 101.5, "low": 99.7, "close": 100.2, "volume": 700_000},  # spring
+        {"open": 100.3, "high": 100.9, "low": 100.1, "close": 100.5, "volume": 900_000},
+        {"open": 100.5, "high": 101.0, "low": 100.2, "close": 100.8, "volume": 1_000_000},
+    ]
+    facts = bundle(
+        prices=[{**range_bar, "date": f"2026-04-{i:02d}"} for i in range(1, 26)]
+        + [{**b, "date": f"2026-05-{i:02d}"} for i, b in enumerate(spring_window, 1)],
+    )
+    facts["indicators"]["sma_50"] = 98.0  # last 100.8 → +2.9%, stack still up
+    facts["indicators"]["sma_200"] = 90.0
+    return facts
+
+
+def test_wyckoff_full_pass():
+    d = wyckoff.evaluate(wyckoff_bundle())
+    assert d.candidate_action == "BUY"
+    # 60 + no-supply (0.7x) + VIX calm; no RS bonus (spy pct unavailable) = 70
+    assert d.base_confidence == 70
+    assert d.entry == 100.8
+    assert d.stop == round(99.7 * 0.995, 4)
+    assert d.target == 108.0
+    assert d.reward_risk is not None and d.reward_risk >= 3.0
+
+
+def test_wyckoff_rs_bonus_when_outperforming_spy():
+    facts = wyckoff_bundle()
+    facts["market_context"]["spy"]["pct_change_20d"] = -5.0  # ticker did ~-3%
+    assert wyckoff.evaluate(facts).base_confidence == 75
+
+
+def test_wyckoff_no_undercut():
+    facts = wyckoff_bundle()
+    for b in facts["prices"][-5:]:
+        b["low"] = max(b["low"], 100.2)  # never pierces support
+    hold_with(wyckoff.evaluate(facts), "spring_undercut")
+
+
+def test_wyckoff_undercut_too_deep_is_breakdown():
+    facts = wyckoff_bundle()
+    facts["prices"][-3]["low"] = 95.0  # 5% under support
+    hold_with(wyckoff.evaluate(facts), "spring_undercut")
+
+
+def test_wyckoff_no_recovery():
+    facts = wyckoff_bundle()
+    facts["prices"][-1]["close"] = 99.5  # still below support
+    hold_with(wyckoff.evaluate(facts), "recovered_into_range")
+
+
+def test_wyckoff_climactic_volume_fails_no_supply():
+    facts = wyckoff_bundle()
+    facts["prices"][-3]["volume"] = 2_000_000  # 2.0x average
+    hold_with(wyckoff.evaluate(facts), "no_supply_volume")
+
+
+def test_wyckoff_range_too_tall():
+    facts = wyckoff_bundle()
+    facts["prices"][0]["high"] = 125.0
+    hold_with(wyckoff.evaluate(facts), "base_forming")
+
+
+def test_wyckoff_reward_too_thin_near_range_top():
+    facts = wyckoff_bundle()
+    facts["prices"][-1]["close"] = 105.0  # recovered but most of the move is gone
+    hold_with(wyckoff.evaluate(facts), "reward_risk")
+
+
+def test_wyckoff_insufficient_bars():
+    facts = wyckoff_bundle()
+    facts["prices"] = facts["prices"][-10:]
+    hold_with(wyckoff.evaluate(facts), "base_forming")
 
 
 # --- enforce_llm_review ------------------------------------------------------------

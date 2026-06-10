@@ -86,6 +86,7 @@ def build_facts_asof(
     sector_above_sma_50: bool | None,
     vix_level: float | None,
     days_until_earnings: int | None,
+    spy_pct_change_20d: float | None = None,
 ) -> dict[str, Any]:
     """Facts bundle as the live agent would have seen it at the close of bar i.
 
@@ -105,7 +106,10 @@ def build_facts_asof(
         "news": [],
         "supply_chain": {},
         "market_context": {
-            "spy": {"above_sma_50": spy_above_sma_50},
+            "spy": {
+                "above_sma_50": spy_above_sma_50,
+                "pct_change_20d": spy_pct_change_20d,
+            },
             "sector_etf": sector_etf,
             "sector": {"above_sma_50": sector_above_sma_50} if sector_etf else None,
             "vix_level": vix_level,
@@ -372,6 +376,9 @@ def run_backtest(
                 sector_etf = None
 
         spy_above = _above_sma_50_by_day(spy["Close"], df.index)
+        spy_pct_20d = (spy["Close"].pct_change(20) * 100.0).reindex(
+            df.index, method="ffill"
+        )
         vix_by_day = vix_close.reindex(df.index, method="ffill")
         earnings = _earnings_dates(ticker)
 
@@ -396,6 +403,9 @@ def run_backtest(
                     days_until_earnings=_days_until_earnings(
                         df.index[i].date(), earnings
                     ),
+                    spy_pct_change_20d=None
+                    if pd.isna(spy_pct_20d.iloc[i])
+                    else round(float(spy_pct_20d.iloc[i]), 2),
                 )
             return facts_cache[i]
 
