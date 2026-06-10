@@ -25,7 +25,9 @@ class Settings(BaseSettings):
     # registered strategy is still evaluated and stored for the tournament.
     # Must name a key in strategy.REGISTRY (agent.py falls back to the first
     # registered strategy with a logged warning if it doesn't).
-    bull_active_strategy: str = "pullback-v1"
+    # turtle-20-v1 won the 2026-06 Dow-30 regime-split tournament (best P&L in
+    # both halves, t≈2.8 on ~1,000 trades) — see plan.md → strategy tournament.
+    bull_active_strategy: str = "turtle-20-v1"
     # Fixed testing universe: comma-separated tickers for the watchlist batch
     # run and the backtest default. 8 liquid names across sectors; edit freely.
     bull_watchlist: str = "AAPL,MSFT,NVDA,AMZN,META,JPM,UNH,XOM"
