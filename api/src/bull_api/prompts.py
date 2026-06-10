@@ -6,6 +6,10 @@ covers signal handling and confidence calibration in a timeframe-agnostic way;
 the appended blurb re-weights gates and signals for the chosen holding clock.
 """
 
+import json
+
+from .strategy.base import LLM_SHADE_BAND
+
 SYSTEM_PROMPT_BASE = """\
 You are a pragmatic trading analyst, not a hyped tipster.
 
@@ -102,15 +106,27 @@ can audit your call.
 _TIMEFRAME_BLURBS: dict[str, str] = {
     "short": """\
 
-HOLDING PERIOD: SHORT (days to a few weeks)
-The user is asking about a short-term trade. Weight momentum and technicals
-heavily — RSI, MACD, recent price action, S/R proximity, and volume confirmation
-are primary. The earnings-window guidance above stands: if `days_until_earnings`
-is 0–7, default toward HOLD unless the trade is explicitly an earnings-reaction
-play. A broken sector ETF (clearly below 50-day SMA and falling) is a hard
-headwind for any BUY. Recent (last ~7 days) news dominates the news signal.
-A great long-term structural thesis is not enough to BUY here if short-term
-technicals are clearly broken — say so plainly.
+HOLDING PERIOD: SHORT (days to a few weeks) — ALGORITHM-FIRST MODE
+A deterministic swing rule has already evaluated this setup; its full decision
+is in the user message under "ALGORITHM CANDIDATE", including the allowed
+confidence range. You do NOT originate this trade. You have exactly two moves:
+
+(a) CONFIRM — submit the candidate's action with a confidence anywhere inside
+    the allowed range. Shade up for supportive news, fundamentals, or
+    structural context the rule cannot see; shade down for soft concerns.
+(b) VETO (only when the candidate is BUY) — submit action HOLD when you hold
+    MATERIAL information outside the rule's inputs: adverse news, a
+    fundamental red flag, a data anomaly in the bundle. The FIRST line of
+    report.reasoning must start with "VETO: <one-sentence reason>". Do not
+    veto to re-litigate technicals (RSI, trend, levels) — the rule already
+    scored them.
+
+Never submit SELL. Never submit BUY when the candidate is HOLD. Out-of-band
+output is coerced server-side and the coercion is recorded. Complete every
+submit_verdict field as usual — headline, all five report sections, key_levels
+(copy the deterministic levels if you have nothing to add). In
+report.technical, restate the rule's checklist outcome in prose rather than
+re-deriving your own technical thesis.
 """,
     "medium": """\
 
@@ -149,4 +165,22 @@ def for_timeframe(tf: str) -> str:
     silently empty.
     """
     return _TIMEFRAME_BLURBS.get(tf, _TIMEFRAME_BLURBS["medium"])
+
+
+def render_candidate_block(algo: dict) -> str:
+    """The ALGORITHM CANDIDATE block appended to the (uncached) user message in
+    short mode: the active strategy's full decision plus the explicit
+    confidence range the LLM is allowed to submit. Server-side
+    `strategy.enforce_llm_review` guarantees what this text demands.
+    """
+    base = int(algo["base_confidence"])
+    payload = {
+        **algo,
+        "allowed_confidence_range": [max(0, base - LLM_SHADE_BAND), min(100, base + LLM_SHADE_BAND)],
+    }
+    return (
+        f"ALGORITHM CANDIDATE (deterministic rule {algo['strategy']} — confirm "
+        "within allowed_confidence_range, or veto a BUY to HOLD):\n"
+        f"```json\n{json.dumps(payload, indent=2)}\n```"
+    )
 

@@ -20,8 +20,9 @@ from .checks import validate_verdict
 from .config import settings
 from .models import Verdict
 from .policy.recall import similar_outcomes
-from .prompts import SYSTEM_PROMPT_BASE, for_timeframe
+from .prompts import SYSTEM_PROMPT_BASE, for_timeframe, render_candidate_block
 from .repos import verdicts as vrepo
+from .strategy import REGISTRY, enforce_llm_review
 from .time import trading_day
 
 logger = logging.getLogger(__name__)
@@ -185,6 +186,25 @@ async def analyze_ticker(
 
     facts = await _build_facts_bundle(ticker, timeframe)
 
+    # Algorithm-first short mode: every registered strategy evaluates the
+    # bundle (pure functions — free); the ACTIVE one supplies the candidate
+    # the LLM may only confirm (±LLM_SHADE_BAND) or veto down to HOLD.
+    strategy_decisions = None
+    active_decision = None
+    active_name = None
+    if timeframe == "short":
+        strategy_decisions = {name: fn(facts) for name, fn in REGISTRY.items()}
+        active_name = settings.bull_active_strategy
+        active_decision = strategy_decisions.get(active_name)
+        if active_decision is None:
+            active_name = next(iter(REGISTRY))
+            active_decision = strategy_decisions[active_name]
+            logger.warning(
+                "BULL_ACTIVE_STRATEGY %r is not registered; falling back to %s",
+                settings.bull_active_strategy,
+                active_name,
+            )
+
     client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
     # cache_control on the tool schema and the base system prompt — the
     # base is shared across timeframes so it caches; the timeframe blurb
@@ -199,6 +219,8 @@ async def analyze_ticker(
         f"(holding period: {timeframe}):\n\n"
         f"```json\n{json.dumps(facts, indent=2, default=str)}\n```\n\n"
     )
+    if active_decision is not None:
+        user_message += render_candidate_block(active_decision.to_json()) + "\n\n"
     if settings.bull_outcome_feedback:
         recall = await similar_outcomes(session, ticker, facts)
         if recall:
@@ -233,6 +255,30 @@ async def analyze_ticker(
         raise
 
     payload = _extract_verdict_payload(response)
+    report = _coerce_report(payload.get("report"))
+
+    # Short mode: coerce the LLM's output into its allowed moves BEFORE the
+    # sanity checks run, so warnings (and the stored verdict) describe the
+    # action that is actually persisted. The review record lands in algo_json.
+    llm_review = None
+    if active_decision is not None:
+        final_action, final_confidence, llm_review = enforce_llm_review(
+            active_decision,
+            payload.get("action", "HOLD"),
+            int(payload.get("confidence", active_decision.base_confidence)),
+            report["reasoning"],
+        )
+        if llm_review["coercions"]:
+            logger.warning(
+                "short-mode LLM output coerced [%s]: %s (raw %s/%s → %s/%s)",
+                ticker,
+                ",".join(llm_review["coercions"]),
+                llm_review["raw_llm_action"],
+                llm_review["raw_llm_confidence"],
+                final_action,
+                final_confidence,
+            )
+        payload["action"], payload["confidence"] = final_action, final_confidence
 
     # Post-verdict sanity checks. Surface contradictions between the verdict
     # and its own inputs; do not auto-correct (see checks.py for sources).
@@ -256,11 +302,24 @@ async def analyze_ticker(
         action=payload["action"],
         confidence=payload["confidence"],
         headline=payload["headline"],
-        report_json=_coerce_report(payload.get("report")),
+        report_json=report,
         key_levels_json=key_levels,
         # created_at auto-fills via the model's now_utc default.
         timeframe=timeframe,
         model_used=settings.bull_model,
+        candidate_action=active_decision.candidate_action if active_decision else None,
+        candidate_confidence=active_decision.base_confidence if active_decision else None,
+        algo_json=(
+            {
+                "active_strategy": active_name,
+                "evaluations": {
+                    name: d.to_json() for name, d in strategy_decisions.items()
+                },
+                "llm_review": llm_review,
+            }
+            if strategy_decisions
+            else None
+        ),
         raw_response_json={
             "stop_reason": response.stop_reason,
             "model": response.model,
