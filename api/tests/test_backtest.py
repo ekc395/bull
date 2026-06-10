@@ -14,6 +14,7 @@ from bull_api.backtest import (
     Trade,
     _days_until_earnings,
     build_facts_asof,
+    portfolio_pnl,
     simulate,
     strategy_summary,
 )
@@ -213,6 +214,74 @@ def test_days_until_earnings_just_reported():
 
 def test_days_until_earnings_unknown():
     assert _days_until_earnings(date(2024, 4, 25), []) is None
+
+
+def pnl_trade(
+    entry_date: str,
+    entry_price: float,
+    exit_date: str,
+    exit_price: float,
+    ticker: str = "T",
+) -> Trade:
+    return Trade(
+        ticker=ticker,
+        strategy="s",
+        entry_date=entry_date,
+        entry_price=entry_price,
+        exit_date=exit_date,
+        exit_price=exit_price,
+        exit_reason="target",
+        return_pct=(exit_price / entry_price - 1.0) * 100.0,
+        hold_bars=3,
+        confidence=65,
+    )
+
+
+def closes(values: list[float], start: str = "2024-01-02") -> pd.Series:
+    idx = pd.bdate_range(start, periods=len(values))
+    return pd.Series(values, index=idx)
+
+
+def test_portfolio_pnl_single_winner():
+    # 10% of $100k = $10k at $100 → 100 shares; exit $110 → +$1,000.
+    trades = [pnl_trade("2024-01-03", 100.0, "2024-01-08", 110.0)]
+    p = portfolio_pnl(
+        trades, {"T": closes([100.0] * 4 + [110.0] * 4)}, start_cash=100_000, alloc_pct=10.0
+    )
+    assert p["trades_taken"] == 1
+    assert p["end_equity"] == 101_000.0
+    assert p["net_pnl_usd"] == 1_000.0
+    assert p["return_pct"] == 1.0
+
+
+def test_portfolio_pnl_skips_entry_when_cash_short():
+    # alloc 60%: first entry takes $60k, second needs $60k but only $40k remains.
+    trades = [
+        pnl_trade("2024-01-03", 100.0, "2024-01-09", 100.0, ticker="A"),
+        pnl_trade("2024-01-03", 50.0, "2024-01-09", 50.0, ticker="B"),
+    ]
+    series = {"A": closes([100.0] * 6), "B": closes([50.0] * 6)}
+    p = portfolio_pnl(trades, series, start_cash=100_000, alloc_pct=60.0)
+    assert p["trades_taken"] == 1
+    assert p["trades_skipped_no_cash"] == 1
+    assert p["end_equity"] == 100_000.0  # flat trade, nothing gained or lost
+
+
+def test_portfolio_pnl_marks_drawdown_to_market_daily():
+    # Position dips to 80 mid-hold before exiting at 110: equity trough is
+    # $90k cash + 100 sh × $80 = $98k → -2% drawdown even though the TRADE won.
+    trades = [pnl_trade("2024-01-03", 100.0, "2024-01-10", 110.0)]
+    series = {"T": closes([100.0, 100.0, 100.0, 80.0, 90.0, 105.0, 110.0])}
+    p = portfolio_pnl(trades, series, start_cash=100_000, alloc_pct=10.0)
+    assert p["max_drawdown_pct"] == -2.0
+    assert p["net_pnl_usd"] == 1_000.0
+
+
+def test_portfolio_pnl_empty():
+    p = portfolio_pnl([], {}, start_cash=100_000, alloc_pct=10.0)
+    assert p["end_equity"] == 100_000
+    assert p["trades_taken"] == 0
+    assert p["max_drawdown_pct"] is None
 
 
 def test_strategy_summary_numbers():

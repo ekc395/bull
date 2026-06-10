@@ -231,6 +231,103 @@ def simulate(
     return SimResult(trades=trades, days_evaluated=days_evaluated, signals=signals)
 
 
+# --- portfolio P&L ----------------------------------------------------------------
+
+START_CASH = 100_000.0  # matches the Alpaca paper account default
+ALLOC_PCT = 10.0  # each entry sized at this % of current equity
+
+
+def portfolio_pnl(
+    trades: list[Trade],
+    closes_by_ticker: dict[str, pd.Series],
+    *,
+    start_cash: float = START_CASH,
+    alloc_pct: float = ALLOC_PCT,
+) -> dict[str, Any]:
+    """Replay one strategy's trades as a single account: fixed-fractional
+    sizing (alloc_pct% of current equity per entry), concurrent positions
+    allowed while cash lasts, equity marked to market DAILY so drawdown is
+    honest (intra-trade, not just trade-to-trade).
+
+    Entries that can't be funded are skipped and counted — a strategy that
+    signals more than its capital can carry gets penalized here, not hidden.
+    """
+    if not trades:
+        return {
+            "start_cash": start_cash,
+            "alloc_pct": alloc_pct,
+            "end_equity": start_cash,
+            "net_pnl_usd": 0.0,
+            "return_pct": 0.0,
+            "max_drawdown_pct": None,
+            "trades_taken": 0,
+            "trades_skipped_no_cash": 0,
+            "avg_exposure_pct": 0.0,
+        }
+
+    days = sorted(
+        {d for s in closes_by_ticker.values() for d in s.index},
+    )
+    closes = {t: s.reindex(days).ffill() for t, s in closes_by_ticker.items()}
+    entries_by_day: dict[Any, list[Trade]] = {}
+    for t in trades:
+        entries_by_day.setdefault(pd.Timestamp(t.entry_date), []).append(t)
+
+    cash = start_cash
+    open_pos: list[dict[str, Any]] = []  # {trade, shares}
+    taken = skipped = 0
+    peak = start_cash
+    max_dd = 0.0
+    exposure_sum = 0.0
+
+    for day in days:
+        # 1. Exits scheduled for today credit cash at the recorded exit price.
+        still_open = []
+        for p in open_pos:
+            if pd.Timestamp(p["trade"].exit_date) <= day:
+                cash += p["shares"] * p["trade"].exit_price
+            else:
+                still_open.append(p)
+        open_pos = still_open
+
+        # 2. Mark to market, then fund today's entries from current equity.
+        invested = sum(
+            p["shares"] * float(closes[p["trade"].ticker].asof(day))
+            for p in open_pos
+        )
+        equity = cash + invested
+        for t in entries_by_day.get(day, []):
+            size = equity * alloc_pct / 100.0
+            if size > cash or t.entry_price <= 0:
+                skipped += 1
+                continue
+            shares = size / t.entry_price
+            cash -= size
+            invested += size
+            open_pos.append({"trade": t, "shares": shares})
+            taken += 1
+
+        equity = cash + invested
+        peak = max(peak, equity)
+        max_dd = min(max_dd, (equity - peak) / peak)
+        exposure_sum += invested / equity if equity > 0 else 0.0
+
+    end_equity = cash + sum(
+        p["shares"] * float(closes[p["trade"].ticker].asof(days[-1])) for p in open_pos
+    )
+    return {
+        "start_cash": start_cash,
+        "alloc_pct": alloc_pct,
+        "end_equity": round(end_equity, 2),
+        "net_pnl_usd": round(end_equity - start_cash, 2),
+        "return_pct": round((end_equity / start_cash - 1.0) * 100.0, 2),
+        "max_drawdown_pct": round(max_dd * 100.0, 2),
+        "trades_taken": taken,
+        "trades_skipped_no_cash": skipped,
+        "avg_exposure_pct": round(100.0 * exposure_sum / len(days), 1),
+    }
+
+
 # --- aggregation -----------------------------------------------------------------
 
 
@@ -340,6 +437,9 @@ def run_backtest(
     start: date,
     end: date,
     strategies: dict[str, Callable[[dict[str, Any]], StrategyDecision]] | None = None,
+    *,
+    start_cash: float = START_CASH,
+    alloc_pct: float = ALLOC_PCT,
 ) -> dict[str, Any]:
     strategies = strategies or dict(REGISTRY)
 
@@ -350,6 +450,7 @@ def run_backtest(
         vix_close = pd.Series(dtype=float)
 
     per_strategy: dict[str, dict[str, SimResult]] = {name: {} for name in strategies}
+    closes_by_ticker: dict[str, pd.Series] = {}
     skipped: list[str] = []
 
     for ticker in tickers:
@@ -383,6 +484,7 @@ def run_backtest(
         earnings = _earnings_dates(ticker)
 
         start_idx = int((df.index.date < start).sum())
+        closes_by_ticker[ticker] = df["Close"].iloc[start_idx:]
         facts_cache: dict[int, dict[str, Any]] = {}
 
         def facts_for(i: int) -> dict[str, Any]:
@@ -435,8 +537,28 @@ def run_backtest(
             "hand-picked current names: mildly survivorship-biased — "
             "use for ranking strategies, not absolute-return claims"
         ),
-        "strategies": {name: strategy_summary(res) for name, res in per_strategy.items()},
-        "benchmark": {"spy_buy_hold_return_pct": spy_return},
+        "strategies": {
+            name: {
+                **strategy_summary(res),
+                "pnl": portfolio_pnl(
+                    sorted(
+                        (t for r in res.values() for t in r.trades),
+                        key=lambda t: t.entry_date,
+                    ),
+                    closes_by_ticker,
+                    start_cash=start_cash,
+                    alloc_pct=alloc_pct,
+                ),
+            }
+            for name, res in per_strategy.items()
+        },
+        "benchmark": {
+            "spy_buy_hold_return_pct": spy_return,
+            "spy_buy_hold_pnl_usd": round(start_cash * spy_return / 100.0, 2)
+            if spy_return is not None
+            else None,
+            "start_cash": start_cash,
+        },
     }
 
 
@@ -471,9 +593,27 @@ def _print_report(report: dict[str, Any], verbose: bool) -> None:
             f"{_fmt(s['total_return_pct']):>8s} {_fmt(s['max_drawdown_pct']):>7s} "
             f"{_fmt(s['avg_hold_bars']):>5s}  {exits}"
         )
+    bench = report["benchmark"]
+    print(
+        f"\nP&L — ${bench['start_cash']:,.0f} account, fixed-fractional sizing, "
+        "daily mark-to-market:"
+    )
+    print(
+        f"{'strategy':18s} {'alloc':>6s} {'end equity':>12s} {'net P&L':>11s} "
+        f"{'ret%':>7s} {'maxDD%':>7s} {'expo%':>6s}  taken/skipped"
+    )
+    for name, s in report["strategies"].items():
+        p = s["pnl"]
+        print(
+            f"{name:18s} {p['alloc_pct']:>5.1f}% {p['end_equity']:>12,.2f} "
+            f"{p['net_pnl_usd']:>11,.2f} {_fmt(p['return_pct']):>7s} "
+            f"{_fmt(p['max_drawdown_pct']):>7s} {_fmt(p['avg_exposure_pct']):>6s}  "
+            f"{p['trades_taken']}/{p['trades_skipped_no_cash']}"
+        )
     print(
         f"\nSPY buy-and-hold over the same window: "
-        f"{_fmt(report['benchmark']['spy_buy_hold_return_pct'], '%')}"
+        f"{_fmt(bench['spy_buy_hold_return_pct'], '%')}"
+        f"  (net {_fmt(bench['spy_buy_hold_pnl_usd'])} on the same account)"
     )
     if verbose:
         for name, s in report["strategies"].items():
@@ -498,6 +638,12 @@ def main() -> None:
     )
     parser.add_argument("--json", default=None, help="also write the full report here")
     parser.add_argument("--verbose", action="store_true", help="per-ticker breakdown")
+    parser.add_argument(
+        "--cash", type=float, default=START_CASH, help="P&L sim starting cash"
+    )
+    parser.add_argument(
+        "--alloc", type=float, default=ALLOC_PCT, help="P&L sim %% of equity per entry"
+    )
     args = parser.parse_args()
 
     if args.tickers:
@@ -521,7 +667,9 @@ def main() -> None:
 
     start = datetime.strptime(args.start, "%Y-%m-%d").date()
     end = datetime.strptime(args.end, "%Y-%m-%d").date()
-    report = run_backtest(tickers, start, end, strategies)
+    report = run_backtest(
+        tickers, start, end, strategies, start_cash=args.cash, alloc_pct=args.alloc
+    )
     _print_report(report, args.verbose)
 
     if args.json:
