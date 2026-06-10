@@ -7,6 +7,7 @@ import pandas as pd
 
 class IndicatorSnapshot(TypedDict):
     rsi_14: float | None
+    rsi_2: float | None  # Connors-style short-term oversold gauge
     macd: float | None
     macd_signal: float | None
     macd_hist: float | None
@@ -72,6 +73,7 @@ def compute_indicators(prices: pd.DataFrame) -> IndicatorSnapshot:
 
     return {
         "rsi_14": _f(rsi.iloc[-1]),
+        "rsi_2": _f(_rsi(close, 2).iloc[-1]),
         "macd": _f(macd.iloc[-1]),
         "macd_signal": _f(macd_signal.iloc[-1]),
         "macd_hist": _f(macd_hist.iloc[-1]),

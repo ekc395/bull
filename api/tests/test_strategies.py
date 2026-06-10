@@ -5,8 +5,10 @@ from bull_api.strategy import (
     REGISTRY,
     bounce,
     breakout,
+    connors,
     enforce_llm_review,
     pullback,
+    turtle,
     wyckoff,
 )
 from bull_api.strategy.base import (
@@ -61,6 +63,8 @@ def test_registry_contents():
         "breakout-v1",
         "bounce-v1",
         "wyckoff-spring-v1",
+        "connors-rsi2-v1",
+        "turtle-20-v1",
     ]
 
 
@@ -358,6 +362,95 @@ def test_wyckoff_insufficient_bars():
     facts = wyckoff_bundle()
     facts["prices"] = facts["prices"][-10:]
     hold_with(wyckoff.evaluate(facts), "base_forming")
+
+
+# --- connors-rsi2-v1 ----------------------------------------------------------------
+
+
+def connors_bundle() -> dict:
+    facts = bundle()
+    facts["indicators"]["rsi_2"] = 6.0
+    facts["indicators"]["atr_14"] = 2.0
+    return facts
+
+
+def test_connors_full_pass():
+    d = connors.evaluate(connors_bundle())
+    assert d.candidate_action == "BUY"
+    # 60 + VIX calm; RSI(2) 6 is not < 5, so no deep bonus = 65
+    assert d.base_confidence == 65
+    assert d.stop == 100.0 - 2.5 * 2.0
+    assert d.target == 100.0 + 1.0 * 2.0
+    assert d.max_hold_trading_days == 5  # fast mean reversion, not the 20-bar default
+
+
+def test_connors_deep_oversold_bonus():
+    facts = connors_bundle()
+    facts["indicators"]["rsi_2"] = 2.5
+    assert connors.evaluate(facts).base_confidence == 70
+
+
+def test_connors_rsi2_not_oversold():
+    facts = connors_bundle()
+    facts["indicators"]["rsi_2"] = 25.0
+    hold_with(connors.evaluate(facts), "rsi2_oversold")
+
+
+def test_connors_below_sma200():
+    facts = connors_bundle()
+    facts["indicators"]["sma_200"] = 101.0  # close 100 below the 200-day
+    facts["indicators"]["sma_50"] = 102.0  # keep the stack up so SETUP fails
+    hold_with(connors.evaluate(facts), "above_sma_200")
+
+
+def test_connors_missing_atr():
+    facts = connors_bundle()
+    facts["indicators"]["atr_14"] = None
+    hold_with(connors.evaluate(facts), "atr_known")
+
+
+# --- turtle-20-v1 ---------------------------------------------------------------------
+
+
+def turtle_bundle() -> dict:
+    bars = [
+        {"date": f"2026-05-{i:02d}", "high": 99.0, "low": 96.0, "close": 98.0, "volume": 1_000_000}
+        for i in range(1, 26)
+    ]
+    bars.append(
+        {"date": "2026-06-08", "high": 100.5, "low": 99.0, "close": 100.0, "volume": 1_500_000}
+    )
+    facts = bundle(prices=bars)
+    facts["indicators"]["atr_14"] = 2.0
+    return facts
+
+
+def test_turtle_breakout_full_pass():
+    d = turtle.evaluate(turtle_bundle())
+    assert d.candidate_action == "BUY"
+    # 60 + MACD>0 + VIX calm = 70
+    assert d.base_confidence == 70
+    assert d.stop == 100.0 - 4.0  # 2N below entry
+    assert d.target == 100.0 + 8.0  # 2R
+    assert d.reward_risk == 2.0
+
+
+def test_turtle_not_a_breakout():
+    facts = turtle_bundle()
+    facts["prices"][-1]["close"] = 98.5  # below the prior 20-bar high of 99
+    hold_with(turtle.evaluate(facts), "donchian_20_breakout")
+
+
+def test_turtle_insufficient_history():
+    facts = turtle_bundle()
+    facts["prices"] = facts["prices"][-10:]
+    hold_with(turtle.evaluate(facts), "donchian_20_breakout")
+
+
+def test_turtle_missing_atr():
+    facts = turtle_bundle()
+    facts["indicators"]["atr_14"] = None
+    hold_with(turtle.evaluate(facts), "atr_known")
 
 
 # --- enforce_llm_review ------------------------------------------------------------

@@ -399,6 +399,9 @@ def _fetch_history(symbol: str, start: date, end: date) -> pd.DataFrame:
     if df is None or df.empty:
         raise ValueError(f"no price data for {symbol!r}")
     df = df[["Open", "High", "Low", "Close", "Volume"]].copy()
+    # yfinance can return today's still-forming bar with NaN OHLC (pre/mid
+    # session); one NaN bar poisons every stat it touches downstream.
+    df = df.dropna(subset=["Open", "High", "Low", "Close"])
     df.index = df.index.tz_localize(None)
     return df
 
