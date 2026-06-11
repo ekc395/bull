@@ -30,6 +30,7 @@ Run: cd api && python -m bull_api.backtest --start 2022-01-01
 import argparse
 import json
 import logging
+import math
 from dataclasses import asdict, dataclass
 from datetime import date, datetime, timedelta
 from typing import Any, Callable
@@ -237,6 +238,24 @@ START_CASH = 100_000.0  # matches the Alpaca paper account default
 ALLOC_PCT = 10.0  # each entry sized at this % of current equity
 
 
+def _sharpe(equity_curve: list[float]) -> float | None:
+    """Annualized Sharpe (rf = 0) over daily equity returns. All-cash flat
+    days count as 0% days — an account-level Sharpe, so a strategy that sits
+    idle gets diluted rather than flattered. None when undefined (< 3 points
+    or zero variance)."""
+    if len(equity_curve) < 3:
+        return None
+    rets = [b / a - 1.0 for a, b in zip(equity_curve, equity_curve[1:]) if a > 0]
+    n = len(rets)
+    if n < 2:
+        return None
+    mean = sum(rets) / n
+    var = sum((r - mean) ** 2 for r in rets) / (n - 1)
+    if var <= 0:
+        return None
+    return round(mean / math.sqrt(var) * math.sqrt(252), 2)
+
+
 def portfolio_pnl(
     trades: list[Trade],
     closes_by_ticker: dict[str, pd.Series],
@@ -260,6 +279,7 @@ def portfolio_pnl(
             "net_pnl_usd": 0.0,
             "return_pct": 0.0,
             "max_drawdown_pct": None,
+            "sharpe": None,
             "trades_taken": 0,
             "trades_skipped_no_cash": 0,
             "avg_exposure_pct": 0.0,
@@ -279,6 +299,7 @@ def portfolio_pnl(
     peak = start_cash
     max_dd = 0.0
     exposure_sum = 0.0
+    equity_curve: list[float] = []
 
     for day in days:
         # 1. Exits scheduled for today credit cash at the recorded exit price.
@@ -311,6 +332,7 @@ def portfolio_pnl(
         peak = max(peak, equity)
         max_dd = min(max_dd, (equity - peak) / peak)
         exposure_sum += invested / equity if equity > 0 else 0.0
+        equity_curve.append(equity)
 
     end_equity = cash + sum(
         p["shares"] * float(closes[p["trade"].ticker].asof(days[-1])) for p in open_pos
@@ -322,6 +344,7 @@ def portfolio_pnl(
         "net_pnl_usd": round(end_equity - start_cash, 2),
         "return_pct": round((end_equity / start_cash - 1.0) * 100.0, 2),
         "max_drawdown_pct": round(max_dd * 100.0, 2),
+        "sharpe": _sharpe(equity_curve),
         "trades_taken": taken,
         "trades_skipped_no_cash": skipped,
         "avg_exposure_pct": round(100.0 * exposure_sum / len(days), 1),
@@ -603,14 +626,15 @@ def _print_report(report: dict[str, Any], verbose: bool) -> None:
     )
     print(
         f"{'strategy':18s} {'alloc':>6s} {'end equity':>12s} {'net P&L':>11s} "
-        f"{'ret%':>7s} {'maxDD%':>7s} {'expo%':>6s}  taken/skipped"
+        f"{'ret%':>7s} {'maxDD%':>7s} {'sharpe':>7s} {'expo%':>6s}  taken/skipped"
     )
     for name, s in report["strategies"].items():
         p = s["pnl"]
         print(
             f"{name:18s} {p['alloc_pct']:>5.1f}% {p['end_equity']:>12,.2f} "
             f"{p['net_pnl_usd']:>11,.2f} {_fmt(p['return_pct']):>7s} "
-            f"{_fmt(p['max_drawdown_pct']):>7s} {_fmt(p['avg_exposure_pct']):>6s}  "
+            f"{_fmt(p['max_drawdown_pct']):>7s} {_fmt(p.get('sharpe')):>7s} "
+            f"{_fmt(p['avg_exposure_pct']):>6s}  "
             f"{p['trades_taken']}/{p['trades_skipped_no_cash']}"
         )
     print(

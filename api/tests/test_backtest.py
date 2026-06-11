@@ -13,6 +13,7 @@ from bull_api.backtest import (
     SimResult,
     Trade,
     _days_until_earnings,
+    _sharpe,
     build_facts_asof,
     portfolio_pnl,
     simulate,
@@ -282,6 +283,29 @@ def test_portfolio_pnl_empty():
     assert p["end_equity"] == 100_000
     assert p["trades_taken"] == 0
     assert p["max_drawdown_pct"] is None
+    assert p["sharpe"] is None
+
+
+def test_sharpe_none_on_flat_curve():
+    # zero variance (all-cash account) → undefined, not divide-by-zero
+    assert _sharpe([100_000.0] * 10) is None
+
+
+def test_sharpe_positive_when_equity_rises():
+    # +1% / flat alternation: positive mean daily return, nonzero variance
+    curve = [100_000.0]
+    for i in range(10):
+        curve.append(curve[-1] * (1.01 if i % 2 == 0 else 1.0))
+    assert _sharpe(curve) > 0
+
+
+def test_portfolio_pnl_records_sharpe():
+    trades = [pnl_trade("2024-01-03", 100.0, "2024-01-08", 110.0)]
+    p = portfolio_pnl(
+        trades, {"T": closes([100.0] * 4 + [110.0] * 4)}, start_cash=100_000, alloc_pct=10.0
+    )
+    assert p["sharpe"] is not None
+    assert p["sharpe"] > 0
 
 
 def test_strategy_summary_numbers():
