@@ -2,7 +2,7 @@
 
 export type Action = "BUY" | "HOLD" | "SELL";
 
-export type Timeframe = "short" | "medium" | "long";
+export type Timeframe = "short" | "long";
 
 export interface Level {
   // Only `price` is required. Backend's Level accepts both deterministic S/R

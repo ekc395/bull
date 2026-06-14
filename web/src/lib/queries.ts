@@ -153,11 +153,11 @@ export function useVerdict(id: number | null | undefined) {
 // `/analyze` is a POST, but on the ticker page we want it to behave like a query:
 // fire once on mount, share state across StrictMode remounts via the React Query cache,
 // and stay cached for the rest of the session (backend also caches by ET trading day).
-// `timeframe` is part of the key so toggling between short/medium/long doesn't replay
+// `timeframe` is part of the key so toggling between short/long doesn't replay
 // the same analysis under a different lens — each timeframe gets its own slot.
 export function useAnalyzeQuery(
   ticker: string | null | undefined,
-  timeframe: Timeframe = "medium",
+  timeframe: Timeframe = "short",
 ) {
   const qc = useQueryClient();
   return useQuery({

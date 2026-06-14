@@ -142,7 +142,7 @@ def test_reward_risk_bands():
 # --- context_for -----------------------------------------------------------
 
 
-def _verdict(action="BUY", confidence=78, timeframe="medium", facts=None):
+def _verdict(action="BUY", confidence=78, timeframe="short", facts=None):
     return SimpleNamespace(
         action=action,
         confidence=confidence,
@@ -155,7 +155,7 @@ def test_context_for_clean_buy():
     ctx = context_for(_verdict())
     assert ctx == Context(
         action="BUY",
-        timeframe="medium",
+        timeframe="short",
         confidence_band="70-84",
         reward_risk_band=">=3",
         trend_aligned=True,

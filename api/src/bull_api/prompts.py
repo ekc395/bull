@@ -1,7 +1,7 @@
 """System prompt for the Opus analysis pass.
 
 The final system prompt sent to the API is `SYSTEM_PROMPT_BASE + for_timeframe(tf)`,
-where `tf` is the user-selected holding period (short | medium | long). The base
+where `tf` is the user-selected holding period (short | long). The base
 covers signal handling and confidence calibration in a timeframe-agnostic way;
 the appended blurb re-weights gates and signals for the chosen holding clock.
 """
@@ -128,18 +128,6 @@ submit_verdict field as usual — headline, all five report sections, key_levels
 report.technical, restate the rule's checklist outcome in prose rather than
 re-deriving your own technical thesis.
 """,
-    "medium": """\
-
-HOLDING PERIOD: MEDIUM (one to six months)
-The user is positioning for a multi-month hold. Balance technicals and
-fundamentals: trend (SMA-50 / SMA-200 alignment) and earnings trajectory matter
-more than short-term momentum oscillators. The earnings-window guidance softens:
-within 7 days, prefer to "size down, not skip" — a single print is one input
-among several. A weak sector trend matters but a strong, well-articulated
-structural thesis (real moat, multi-quarter catalyst, capacity ramp) can
-override it; lower confidence rather than auto-HOLD. News window covers ~30
-days — weight company-specific developments over daily chop.
-""",
     "long": """\
 
 HOLDING PERIOD: LONG (six months to multi-year)
@@ -161,10 +149,10 @@ competitive moat decay, balance-sheet/capital-intensity concerns.
 def for_timeframe(tf: str) -> str:
     """Return the timeframe-specific blurb appended to `SYSTEM_PROMPT_BASE`.
 
-    Unknown values fall back to the medium-term blurb so the prompt is never
+    Unknown values fall back to the short-term blurb so the prompt is never
     silently empty.
     """
-    return _TIMEFRAME_BLURBS.get(tf, _TIMEFRAME_BLURBS["medium"])
+    return _TIMEFRAME_BLURBS.get(tf, _TIMEFRAME_BLURBS["short"])
 
 
 def render_candidate_block(algo: dict) -> str:

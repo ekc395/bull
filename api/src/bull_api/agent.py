@@ -38,12 +38,12 @@ from .tools.supply_chain import get_supply_chain_context
 # Recent daily bars included in the facts bundle, by user-selected timeframe.
 # Long-horizon analyses need more history for trend/regime context; short needs
 # only the near-term shape so the context window stays compact.
-_PRICE_TAIL_BARS: dict[str, int] = {"short": 60, "medium": 250, "long": 750}
+_PRICE_TAIL_BARS: dict[str, int] = {"short": 60, "long": 750}
 # yfinance fetch window (calendar days). Has to be enough to yield the tail
 # above plus headroom for SMA-200 warmup on long.
-_PRICE_LOOKBACK_DAYS: dict[str, int] = {"short": 400, "medium": 400, "long": 1100}
+_PRICE_LOOKBACK_DAYS: dict[str, int] = {"short": 400, "long": 1100}
 # Recent-news window (calendar days), by timeframe.
-_NEWS_DAYS: dict[str, int] = {"short": 7, "medium": 30, "long": 90}
+_NEWS_DAYS: dict[str, int] = {"short": 7, "long": 90}
 
 # 4096 leaves headroom for the report's five narrative fields + key_levels.
 # 2048 was occasionally truncating the tool call mid-JSON.
@@ -51,8 +51,8 @@ MAX_TOKENS = 4096
 
 
 def _tf(d: dict[str, int], timeframe: str) -> int:
-    """Look up a per-timeframe window with a safe fallback to medium."""
-    return d.get(timeframe, d["medium"])
+    """Look up a per-timeframe window with a safe fallback to short."""
+    return d.get(timeframe, d["short"])
 
 
 class InsufficientCreditsError(Exception):
@@ -167,7 +167,7 @@ def _coerce_report(value: Any) -> dict[str, str]:
 
 
 async def analyze_ticker(
-    ticker: str, session: AsyncSession, *, force: bool = False, timeframe: str = "medium"
+    ticker: str, session: AsyncSession, *, force: bool = False, timeframe: str = "short"
 ) -> Verdict:
     """Run the Opus analysis on the ticker's facts bundle.
 
@@ -177,7 +177,7 @@ async def analyze_ticker(
     """
     ticker = ticker.upper()
     if timeframe not in _PRICE_TAIL_BARS:
-        timeframe = "medium"
+        timeframe = "short"
 
     if not force:
         cached = await vrepo.get_for_today(ticker, trading_day(), session, timeframe=timeframe)

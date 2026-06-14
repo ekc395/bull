@@ -9,7 +9,7 @@ Action = Literal["BUY", "HOLD", "SELL"]
 
 # Holding-period the user selects in the UI. Drives the prompt variant and the
 # tool windows (price-tail bars, news-lookback days) in `agent.py`.
-Timeframe = Literal["short", "medium", "long"]
+Timeframe = Literal["short", "long"]
 
 
 def _utc_iso(v: datetime) -> str:
@@ -114,7 +114,7 @@ class VerdictResponse(BaseModel):
     key_levels: KeyLevels
     created_at: UTCDateTime
     model_used: str
-    timeframe: Timeframe = "medium"
+    timeframe: Timeframe = "short"
     policy: PolicyDecisionResponse | None = None
     # Populated only for short-mode verdicts from the strategy layer onward.
     algo: AlgoEvaluation | None = None
@@ -123,7 +123,7 @@ class VerdictResponse(BaseModel):
 class AnalyzeRequest(BaseModel):
     ticker: str
     force: bool = False
-    timeframe: Timeframe = "medium"
+    timeframe: Timeframe = "short"
 
 
 class AccountResponse(BaseModel):

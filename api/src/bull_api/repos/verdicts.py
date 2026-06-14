@@ -10,7 +10,7 @@ from ..time import trading_day_bounds
 
 
 async def get_for_today(
-    ticker: str, on: date, session: AsyncSession, *, timeframe: str = "medium"
+    ticker: str, on: date, session: AsyncSession, *, timeframe: str = "short"
 ) -> Verdict | None:
     """Most recent Verdict for `(ticker, timeframe)` whose trading day is `on` (US/Eastern).
 

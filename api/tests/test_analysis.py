@@ -19,7 +19,7 @@ from bull_api.policy.features import Context
 def _ctx(**over) -> Context:
     base = dict(
         action="BUY",
-        timeframe="medium",
+        timeframe="short",
         confidence_band="70-84",
         reward_risk_band="2-3",
         trend_aligned=True,

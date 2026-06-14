@@ -1,7 +1,6 @@
-// User-selected holding period (short | medium | long). Drives the prompt
-// variant and tool windows in the agent. Persisted in localStorage so the
-// dashboard remembers the choice; URL `?tf=` on the ticker page wins for
-// shareability.
+// User-selected holding period (short | long). Drives the prompt variant and
+// tool windows in the agent. Persisted in localStorage so the dashboard
+// remembers the choice; URL `?tf=` on the ticker page wins for shareability.
 
 "use client";
 
@@ -10,8 +9,8 @@ import { useCallback, useEffect, useState } from "react";
 import type { Timeframe } from "@/types/api";
 
 const STORAGE_KEY = "bull.timeframe";
-const DEFAULT: Timeframe = "medium";
-const VALID: readonly Timeframe[] = ["short", "medium", "long"] as const;
+const DEFAULT: Timeframe = "short";
+const VALID: readonly Timeframe[] = ["short", "long"] as const;
 
 export function isTimeframe(value: unknown): value is Timeframe {
   return typeof value === "string" && (VALID as readonly string[]).includes(value);
@@ -21,7 +20,7 @@ export function coerceTimeframe(value: unknown, fallback: Timeframe = DEFAULT): 
   return isTimeframe(value) ? value : fallback;
 }
 
-// Reads the saved choice from localStorage, falling back to "medium". The
+// Reads the saved choice from localStorage, falling back to "short". The
 // initial render returns the default to avoid an SSR/CSR hydration mismatch;
 // the stored value is applied on mount.
 export function useTimeframe(): [Timeframe, (next: Timeframe) => void] {
@@ -51,11 +50,9 @@ export function useTimeframe(): [Timeframe, (next: Timeframe) => void] {
 export const TIMEFRAMES = VALID;
 export const TIMEFRAME_LABELS: Record<Timeframe, string> = {
   short: "Short",
-  medium: "Medium",
   long: "Long",
 };
 export const TIMEFRAME_HINTS: Record<Timeframe, string> = {
   short: "days to a few weeks",
-  medium: "one to six months",
   long: "six months to multi-year",
 };

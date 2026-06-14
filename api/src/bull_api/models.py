@@ -30,13 +30,13 @@ class Verdict(Base):
     report_json: Mapped[dict[str, Any]] = mapped_column(JSON)
     key_levels_json: Mapped[dict[str, Any]] = mapped_column(JSON)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
-    timeframe: Mapped[str] = mapped_column(String(8), default="medium")  # short | medium | long
+    timeframe: Mapped[str] = mapped_column(String(8), default="short")  # short | long
 
     model_used: Mapped[str] = mapped_column(String(64))
     raw_response_json: Mapped[dict[str, Any]] = mapped_column(JSON)
     facts_bundle_json: Mapped[dict[str, Any]] = mapped_column(JSON)
 
-    # Algorithm-first short mode (migration 0009). NULL = medium/long row or a
+    # Algorithm-first short mode (migration 0009). NULL = long row or a
     # short verdict from before the strategy layer. `candidate_*` mirror the
     # ACTIVE strategy's decision (queryable for the scores comparison);
     # `algo_json` holds every strategy's evaluation + the LLM review record.
