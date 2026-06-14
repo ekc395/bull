@@ -308,6 +308,99 @@ def test_portfolio_pnl_records_sharpe():
     assert p["sharpe"] > 0
 
 
+# --- cost model --------------------------------------------------------------------------
+
+
+def test_cost_bps_reduces_return_and_is_net():
+    # Target win at 103 from a 100.5 entry. 10 bps/side ≈ 0.20% round-trip drag.
+    df = make_df([FLAT, FLAT, (100.5, 101.0, 99.5, 100.5), (100.0, 104.0, 99.0, 102.0)] + [FLAT] * 5)
+    free = simulate(df, signal_at(1, buy(target=103.0)))
+    costed = simulate(df, signal_at(1, buy(target=103.0)), cost_bps=10.0)
+    assert costed.trades[0].return_pct < free.trades[0].return_pct
+    # entry pays up (×1.001), exit gives up (×0.999): net of both legs
+    assert costed.trades[0].entry_price == round(100.5 * 1.001, 4)
+    assert costed.trades[0].exit_price == round(103.0 * 0.999, 4)
+
+
+def test_cost_bps_monotonic():
+    df = make_df([FLAT, FLAT, FLAT, (100.0, 104.0, 99.0, 102.0)] + [FLAT] * 5)
+    rets = [
+        simulate(df, signal_at(1, buy(target=103.0)), cost_bps=b).trades[0].return_pct
+        for b in (0.0, 5.0, 25.0, 100.0)
+    ]
+    assert rets == sorted(rets, reverse=True)  # more cost → strictly less return
+
+
+# --- gap-skip accounting -------------------------------------------------------------------
+
+
+def test_gap_skip_through_stop_counted_on_stop_side():
+    df = make_df([FLAT, FLAT, (94.0, 96.0, 92.0, 95.0)] + [FLAT] * 5)
+    sim = simulate(df, signal_at(1, buy(stop=95.0)))
+    assert sim.trades == []
+    assert sim.gap_skips_stop == 1
+    assert sim.gap_skips_target == 0
+
+
+def test_gap_skip_through_target_counted_on_target_side():
+    # Next open gaps above the target → no edge for a next-open entry; skipped,
+    # but recorded on the target side (the upside a fixed target leaves behind).
+    df = make_df([FLAT, FLAT, (105.0, 106.0, 104.0, 105.5)] + [FLAT] * 5)
+    sim = simulate(df, signal_at(1, buy(target=103.0)))
+    assert sim.trades == []
+    assert sim.gap_skips_target == 1
+    assert sim.gap_skips_stop == 0
+
+
+# --- both-touched resolution ---------------------------------------------------------------
+
+
+def test_both_touched_counted_and_optimistic_flips_exit():
+    df = make_df([FLAT, FLAT, FLAT, (100.0, 106.0, 94.0, 100.0)] + [FLAT] * 5)
+    conservative = simulate(df, signal_at(1, buy(stop=95.0, target=103.0)))
+    assert conservative.both_touched == 1
+    assert conservative.trades[0].exit_reason == "stop"
+    optimistic = simulate(df, signal_at(1, buy(stop=95.0, target=103.0)), optimistic=True)
+    assert optimistic.both_touched == 1
+    assert optimistic.trades[0].exit_reason == "target"
+
+
+# --- ranking robustness --------------------------------------------------------------------
+
+
+def test_low_confidence_flag_and_ci():
+    def trade(ret: float, exit_date: str) -> Trade:
+        return Trade(
+            ticker="T", strategy="s", entry_date="2024-01-02", entry_price=100.0,
+            exit_date=exit_date, exit_price=100.0 + ret, exit_reason="target",
+            return_pct=ret, hold_bars=5, confidence=65,
+        )
+
+    results = {
+        "T": SimResult(
+            trades=[trade(1.0, "2024-02-01"), trade(3.0, "2024-03-01")],
+            days_evaluated=100, signals=2,
+        )
+    }
+    s = strategy_summary(results)
+    assert s["low_confidence"] is True  # 2 < MIN_TRADES_FOR_CONFIDENCE
+    lo, hi = s["avg_return_ci_95"]
+    assert lo < 2.0 < hi  # CI brackets the sample mean
+
+
+def test_summary_aggregates_gap_and_both_touched_counts():
+    results = {
+        "A": SimResult(trades=[], days_evaluated=10, signals=0,
+                       gap_skips_stop=2, gap_skips_target=1, both_touched=3),
+        "B": SimResult(trades=[], days_evaluated=10, signals=0,
+                       gap_skips_stop=0, gap_skips_target=4, both_touched=1),
+    }
+    s = strategy_summary(results)
+    assert s["gap_skips_stop"] == 2
+    assert s["gap_skips_target"] == 5
+    assert s["both_touched"] == 4
+
+
 def test_strategy_summary_numbers():
     def trade(ret: float, reason: str, exit_date: str) -> Trade:
         return Trade(
@@ -334,6 +427,10 @@ def test_strategy_summary_numbers():
     assert s["trades"] == 2
     assert s["win_rate"] == 0.5
     assert s["fire_rate_pct"] == 2.0
-    assert s["total_return_pct"] == 4.5  # 1.10 × 0.95 − 1
+    assert s["avg_return_pct"] == 2.5  # mean of +10 and −5
+    # Account-level return/drawdown are owned by portfolio_pnl, not the summary —
+    # sequential per-trade compounding is meaningless once trades overlap.
+    assert "total_return_pct" not in s
+    assert "max_drawdown_pct" not in s
     assert s["exit_reasons"] == {"target": 1, "stop": 1}
     assert s["per_ticker"]["T"]["trades"] == 2

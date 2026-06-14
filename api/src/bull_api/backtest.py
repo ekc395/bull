@@ -18,13 +18,19 @@ Point-in-time discipline:
   - If the next open already gaps through the stop or target, the entry is
     skipped (the bracket would fill instantly for ~0 edge).
 
-Fidelity bounds (accepted, see plan.md): daily resolution, no slippage model,
-yfinance earnings dates are sparse for older history (the earnings filter
-fails open, same as live), and a hand-picked watchlist of today's names is
-mildly survivorship-biased — fine for RANKING strategies on a shared universe,
-not for absolute-return claims.
+The universe defaults to the current S&P 500 (via `screen.fetch_sp500`, which
+also tags each name's sector so we skip the slow per-ticker `.info` call);
+`--tickers` overrides with a manual list and `--size N` trims the index for
+quick runs.
 
-Run: cd api && python -m bull_api.backtest --start 2022-01-01
+Fidelity bounds (accepted, see plan.md): daily resolution, flat per-side cost
+proxy (no queue/impact), yfinance earnings dates sparse for older history (the
+earnings filter fails open, same as live), and the universe is current index
+membership replayed on the past — survivorship-biased, so fine for RANKING
+strategies on a shared universe, not for absolute-return claims.
+
+Run: cd api && python -m bull_api.backtest --start 2022-01-01          # full S&P 500
+     cd api && python -m bull_api.backtest --start 2022-01-01 --size 100  # quick
 """
 
 import argparse
@@ -51,10 +57,6 @@ logger = logging.getLogger(__name__)
 LOOKBACK_BARS = 270
 PRICE_TAIL_BARS = 60
 WARMUP_CALENDAR_DAYS = 650  # fetched before --start so day 1 has a full window
-
-# Used when settings (and the BULL_WATCHLIST env) are unavailable; kept in sync
-# with config.Settings.bull_watchlist.
-DEFAULT_TICKERS = "AAPL,MSFT,NVDA,AMZN,META,JPM,UNH,XOM"
 
 
 # --- point-in-time facts -------------------------------------------------------
@@ -144,6 +146,14 @@ class SimResult:
     trades: list[Trade]
     days_evaluated: int
     signals: int
+    # Entries dropped because the next open already gapped through a bracket leg
+    # (no edge left). Split by side so the bias is visible: target-side skips
+    # disproportionately hit breakout strategies, whose best signals gap away.
+    gap_skips_stop: int = 0
+    gap_skips_target: int = 0
+    # Bars that touched BOTH stop and target — resolved stop-first (or
+    # target-first under `optimistic`). Counted so the sensitivity is visible.
+    both_touched: int = 0
 
 
 def simulate(
@@ -153,27 +163,44 @@ def simulate(
     ticker: str = "?",
     strategy: str = "?",
     start_idx: int = 0,
+    cost_bps: float = 0.0,
+    optimistic: bool = False,
 ) -> SimResult:
     """Walk bars [start_idx, end), one open position at a time.
 
     `decide(i)` is called only while flat and only with information through
     bar i's close (the caller guarantees that via build_facts_asof); a BUY
     fills at the open of bar i+1.
+
+    `cost_bps` is a per-side cost (commission + half-spread proxy) applied to
+    every fill, so the recorded entry/exit prices — and therefore every
+    downstream stat — are net of trading frictions. Gap-through detection uses
+    the RAW open (the real market price), not the cost-adjusted fill.
+
+    `optimistic` flips the both-touched-bar resolution from stop-first
+    (conservative default) to target-first, giving the upper bound of the
+    win-rate sensitivity band.
     """
     o = df["Open"].to_numpy(dtype=float)
     h = df["High"].to_numpy(dtype=float)
     lo = df["Low"].to_numpy(dtype=float)
     c = df["Close"].to_numpy(dtype=float)
     n = len(df)
+    mult_in = 1.0 + cost_bps / 10_000.0  # pay up on the buy
+    mult_out = 1.0 - cost_bps / 10_000.0  # give up on the sell
 
     trades: list[Trade] = []
     days_evaluated = 0
     signals = 0
+    gap_skips_stop = 0
+    gap_skips_target = 0
+    both_touched = 0
     pos: dict[str, Any] | None = None
 
     def close_out(i: int, price: float, reason: str) -> None:
         nonlocal pos
         assert pos is not None
+        exit_price = price * mult_out
         trades.append(
             Trade(
                 ticker=ticker,
@@ -181,9 +208,9 @@ def simulate(
                 entry_date=df.index[pos["entry_idx"]].date().isoformat(),
                 entry_price=round(pos["entry_price"], 4),
                 exit_date=df.index[i].date().isoformat(),
-                exit_price=round(price, 4),
+                exit_price=round(exit_price, 4),
                 exit_reason=reason,
-                return_pct=round((price / pos["entry_price"] - 1.0) * 100.0, 4),
+                return_pct=round((exit_price / pos["entry_price"] - 1.0) * 100.0, 4),
                 hold_bars=i - pos["entry_idx"],
                 confidence=pos["confidence"],
             )
@@ -197,12 +224,21 @@ def simulate(
                 close_out(i, o[i], "stop")  # gapped through the stop
             elif past_entry_bar and o[i] >= pos["target"]:
                 close_out(i, o[i], "target")  # gapped through the target
-            elif lo[i] <= pos["stop"]:
-                close_out(i, pos["stop"], "stop")  # stop-first on ambiguous bars
-            elif h[i] >= pos["target"]:
-                close_out(i, pos["target"], "target")
-            elif i - pos["entry_idx"] >= pos["max_hold"]:
-                close_out(i, c[i], "time_stop")
+            else:
+                hit_stop = lo[i] <= pos["stop"]
+                hit_target = h[i] >= pos["target"]
+                if hit_stop and hit_target:
+                    both_touched += 1
+                    if optimistic:
+                        close_out(i, pos["target"], "target")
+                    else:
+                        close_out(i, pos["stop"], "stop")  # conservative default
+                elif hit_stop:
+                    close_out(i, pos["stop"], "stop")
+                elif hit_target:
+                    close_out(i, pos["target"], "target")
+                elif i - pos["entry_idx"] >= pos["max_hold"]:
+                    close_out(i, c[i], "time_stop")
 
         if pos is None and i < n - 1:
             days_evaluated += 1
@@ -215,11 +251,19 @@ def simulate(
             ):
                 signals += 1
                 entry = o[i + 1]
-                if entry <= d.stop or entry >= d.target:
-                    continue  # overnight gap through a bracket leg — no edge left
+                # Overnight gap through a bracket leg — no edge left, so the
+                # entry is skipped (you can't capture a move you weren't in).
+                # Counted by side: target-side skips quantify the upside a
+                # next-open entry structurally leaves on the table.
+                if entry <= d.stop:
+                    gap_skips_stop += 1
+                    continue
+                if entry >= d.target:
+                    gap_skips_target += 1
+                    continue
                 pos = {
                     "entry_idx": i + 1,
-                    "entry_price": entry,
+                    "entry_price": entry * mult_in,
                     "stop": d.stop,
                     "target": d.target,
                     "max_hold": d.max_hold_trading_days,
@@ -229,13 +273,21 @@ def simulate(
     if pos is not None and pos["entry_idx"] <= n - 1:
         close_out(n - 1, c[n - 1], "end_of_data")
 
-    return SimResult(trades=trades, days_evaluated=days_evaluated, signals=signals)
+    return SimResult(
+        trades=trades,
+        days_evaluated=days_evaluated,
+        signals=signals,
+        gap_skips_stop=gap_skips_stop,
+        gap_skips_target=gap_skips_target,
+        both_touched=both_touched,
+    )
 
 
 # --- portfolio P&L ----------------------------------------------------------------
 
 START_CASH = 100_000.0  # matches the Alpaca paper account default
 ALLOC_PCT = 10.0  # each entry sized at this % of current equity
+MIN_TRADES_FOR_CONFIDENCE = 20  # below this, a strategy's edge is noise
 
 
 def _sharpe(equity_curve: list[float]) -> float | None:
@@ -354,17 +406,19 @@ def portfolio_pnl(
 # --- aggregation -----------------------------------------------------------------
 
 
-def _max_drawdown_pct(returns_pct: list[float]) -> float | None:
-    """Max drawdown of an equity curve that compounds the trades in order."""
-    if not returns_pct:
+def _mean_ci_95(values: list[float]) -> list[float] | None:
+    """Normal-approx 95% confidence interval for the mean of per-trade returns.
+    A wide band (or one straddling 0) means the strategy's edge isn't yet
+    distinguishable from luck. None when < 2 points or zero variance."""
+    n = len(values)
+    if n < 2:
         return None
-    equity = peak = 1.0
-    worst = 0.0
-    for r in returns_pct:
-        equity *= 1.0 + r / 100.0
-        peak = max(peak, equity)
-        worst = min(worst, (equity - peak) / peak)
-    return round(worst * 100.0, 2)
+    mean = sum(values) / n
+    var = sum((v - mean) ** 2 for v in values) / (n - 1)
+    if var <= 0:
+        return None
+    half = 1.96 * math.sqrt(var) / math.sqrt(n)  # SE of the mean
+    return [round(mean - half, 3), round(mean + half, 3)]
 
 
 def strategy_summary(results: dict[str, SimResult]) -> dict[str, Any]:
@@ -376,21 +430,24 @@ def strategy_summary(results: dict[str, SimResult]) -> dict[str, Any]:
     signals = sum(r.signals for r in results.values())
     rets = [t.return_pct for t in trades]
     wins = [r for r in rets if r > 0]
-    compounded = 1.0
-    for r in rets:
-        compounded *= 1.0 + r / 100.0
     exits: dict[str, int] = {}
     for t in trades:
         exits[t.exit_reason] = exits.get(t.exit_reason, 0) + 1
     return {
         "trades": len(trades),
+        "low_confidence": len(trades) < MIN_TRADES_FOR_CONFIDENCE,
         "days_evaluated": days,
         "fire_rate_pct": round(100.0 * signals / days, 2) if days else None,
         "win_rate": round(len(wins) / len(rets), 4) if rets else None,
         "avg_return_pct": round(sum(rets) / len(rets), 3) if rets else None,
+        "avg_return_ci_95": _mean_ci_95(rets),
         "median_return_pct": round(sorted(rets)[len(rets) // 2], 3) if rets else None,
-        "total_return_pct": round((compounded - 1.0) * 100.0, 2) if rets else None,
-        "max_drawdown_pct": _max_drawdown_pct(rets),
+        # Account-level return / drawdown live ONLY in portfolio_pnl — compounding
+        # per-trade returns sequentially is meaningless once trades overlap across
+        # tickers (it explodes), so it is deliberately not reported here.
+        "gap_skips_stop": sum(r.gap_skips_stop for r in results.values()),
+        "gap_skips_target": sum(r.gap_skips_target for r in results.values()),
+        "both_touched": sum(r.both_touched for r in results.values()),
         "avg_hold_bars": round(sum(t.hold_bars for t in trades) / len(trades), 1)
         if trades
         else None,
@@ -466,8 +523,15 @@ def run_backtest(
     *,
     start_cash: float = START_CASH,
     alloc_pct: float = ALLOC_PCT,
+    cost_bps: float = 0.0,
+    optimistic: bool = False,
+    universe_meta: dict[str, dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     strategies = strategies or dict(REGISTRY)
+    # symbol → {"sector", "industry"} (yfinance taxonomy), e.g. from the S&P 500
+    # constituents CSV. When present we skip the slow per-ticker `.info` call —
+    # the difference between a feasible 500-name run and a rate-limited crawl.
+    universe_meta = universe_meta or {}
 
     spy = _fetch_history("SPY", start, end)
     try:
@@ -477,6 +541,7 @@ def run_backtest(
 
     per_strategy: dict[str, dict[str, SimResult]] = {name: {} for name in strategies}
     closes_by_ticker: dict[str, pd.Series] = {}
+    etf_close_cache: dict[str, pd.Series | None] = {}  # one fetch per sector ETF
     skipped: list[str] = []
 
     for ticker in tickers:
@@ -487,20 +552,28 @@ def run_backtest(
             skipped.append(ticker)
             continue
 
-        # Sector ETF via the live mapping; .info is best-effort (None → the
-        # sector filter fails closed, same as a live fetch failure would).
-        try:
-            info = yf.Ticker(ticker).info or {}
-        except Exception:
-            info = {}
-        sector_etf = _resolve_sector_etf(info.get("sector"), info.get("industry"))
+        # Sector ETF via the live mapping. Prefer CSV-provided sector/industry;
+        # fall back to a best-effort `.info` for manual --tickers lists (None →
+        # the sector filter fails closed, same as a live fetch failure would).
+        meta = universe_meta.get(ticker)
+        if meta is None:
+            try:
+                meta = yf.Ticker(ticker).info or {}
+            except Exception:
+                meta = {}
+        sector_etf = _resolve_sector_etf(meta.get("sector"), meta.get("industry"))
         sector_above = pd.Series(index=df.index, dtype=object)
         if sector_etf:
-            try:
-                etf_close = _fetch_history(sector_etf, start, end)["Close"]
-                sector_above = _above_sma_50_by_day(etf_close, df.index)
-            except Exception:
+            if sector_etf not in etf_close_cache:
+                try:
+                    etf_close_cache[sector_etf] = _fetch_history(sector_etf, start, end)["Close"]
+                except Exception:
+                    etf_close_cache[sector_etf] = None
+            etf_close = etf_close_cache[sector_etf]
+            if etf_close is None:
                 sector_etf = None
+            else:
+                sector_above = _above_sma_50_by_day(etf_close, df.index)
 
         spy_above = _above_sma_50_by_day(spy["Close"], df.index)
         spy_pct_20d = (spy["Close"].pct_change(20) * 100.0).reindex(
@@ -544,6 +617,8 @@ def run_backtest(
                 ticker=ticker,
                 strategy=name,
                 start_idx=start_idx,
+                cost_bps=cost_bps,
+                optimistic=optimistic,
             )
         facts_cache.clear()
 
@@ -559,9 +634,13 @@ def run_backtest(
         "end": end.isoformat(),
         "tickers": [t for t in tickers if t not in skipped],
         "skipped": skipped,
+        "cost_bps": cost_bps,
+        "exit_resolution": "target-first (optimistic)" if optimistic else "stop-first",
         "universe_note": (
-            "hand-picked current names: mildly survivorship-biased — "
-            "use for ranking strategies, not absolute-return claims"
+            f"{len(tickers)} names, current index membership — survivorship-biased "
+            "(today's constituents replayed on the past, not point-in-time) but a "
+            "large shared sample. Use for RANKING strategies against the SPY "
+            "benchmark, never for absolute-return claims."
         ),
         "strategies": {
             name: {
@@ -602,10 +681,15 @@ def _print_report(report: dict[str, Any], verbose: bool) -> None:
     )
     if report["skipped"]:
         print(f"skipped (no data): {','.join(report['skipped'])}")
+    print(
+        f"cost: {report.get('cost_bps', 0.0)} bps/side   "
+        f"both-touched bars resolved: {report.get('exit_resolution', 'stop-first')}"
+    )
     print(f"note: {report['universe_note']}\n")
     print(
         f"{'strategy':14s} {'trades':>6s} {'fire%':>6s} {'win%':>6s} {'avg%':>7s} "
-        f"{'med%':>7s} {'total%':>8s} {'maxDD%':>7s} {'hold':>5s}  exits (stop/target/time/eod)"
+        f"{'med%':>7s} {'hold':>5s}  exits (stop/target/time/eod)   "
+        "[return & maxDD: see P&L table]"
     )
     for name, s in report["strategies"].items():
         ex = s["exit_reasons"]
@@ -613,12 +697,14 @@ def _print_report(report: dict[str, Any], verbose: bool) -> None:
             str(ex.get(k, 0)) for k in ("stop", "target", "time_stop", "end_of_data")
         )
         win = None if s["win_rate"] is None else round(s["win_rate"] * 100, 1)
+        label = f"{name}*" if s.get("low_confidence") else name
         print(
-            f"{name:14s} {s['trades']:>6d} {_fmt(s['fire_rate_pct']):>6s} {_fmt(win):>6s} "
+            f"{label:14s} {s['trades']:>6d} {_fmt(s['fire_rate_pct']):>6s} {_fmt(win):>6s} "
             f"{_fmt(s['avg_return_pct']):>7s} {_fmt(s['median_return_pct']):>7s} "
-            f"{_fmt(s['total_return_pct']):>8s} {_fmt(s['max_drawdown_pct']):>7s} "
             f"{_fmt(s['avg_hold_bars']):>5s}  {exits}"
         )
+    if any(s.get("low_confidence") for s in report["strategies"].values()):
+        print(f"  * fewer than {MIN_TRADES_FOR_CONFIDENCE} trades — edge is not yet distinguishable from noise")
     bench = report["benchmark"]
     print(
         f"\nP&L — ${bench['start_cash']:,.0f} account, fixed-fractional sizing, "
@@ -642,6 +728,17 @@ def _print_report(report: dict[str, Any], verbose: bool) -> None:
         f"{_fmt(bench['spy_buy_hold_return_pct'], '%')}"
         f"  (net {_fmt(bench['spy_buy_hold_pnl_usd'])} on the same account)"
     )
+    print("\ndiagnostics — avg-return 95% CI, signals dropped to overnight gaps, both-touched bars:")
+    print(
+        f"{'strategy':18s} {'avg% 95% CI':>20s} {'gapSkip(stop/tgt)':>18s} {'both-touch':>11s}"
+    )
+    for name, s in report["strategies"].items():
+        ci = s.get("avg_return_ci_95")
+        ci_str = "—" if ci is None else f"[{ci[0]}, {ci[1]}]"
+        gap = f"{s.get('gap_skips_stop', 0)}/{s.get('gap_skips_target', 0)}"
+        print(
+            f"{name:18s} {ci_str:>20s} {gap:>18s} {s.get('both_touched', 0):>11d}"
+        )
     if verbose:
         for name, s in report["strategies"].items():
             print(f"\n{name} per ticker:")
@@ -658,7 +755,15 @@ def main() -> None:
     parser.add_argument("--start", required=True, help="YYYY-MM-DD")
     parser.add_argument("--end", default=date.today().isoformat(), help="YYYY-MM-DD")
     parser.add_argument(
-        "--tickers", default=None, help="comma-separated; default: BULL_WATCHLIST"
+        "--tickers",
+        default=None,
+        help="comma-separated override; default: the full S&P 500",
+    )
+    parser.add_argument(
+        "--size",
+        type=int,
+        default=None,
+        help="trim the S&P 500 universe to the first N names (quick runs)",
     )
     parser.add_argument(
         "--strategies", default=None, help=f"comma-separated subset of {list(REGISTRY)}"
@@ -671,18 +776,30 @@ def main() -> None:
     parser.add_argument(
         "--alloc", type=float, default=ALLOC_PCT, help="P&L sim %% of equity per entry"
     )
+    parser.add_argument(
+        "--cost-bps",
+        type=float,
+        default=0.0,
+        help="per-side cost (commission + half-spread) applied to every fill",
+    )
+    parser.add_argument(
+        "--optimistic",
+        action="store_true",
+        help="resolve both-touched bars target-first (win-rate upper bound)",
+    )
     args = parser.parse_args()
 
     if args.tickers:
-        raw = args.tickers
+        tickers = [t.strip().upper() for t in args.tickers.split(",") if t.strip()]
+        universe_meta: dict[str, dict[str, Any]] = {}  # manual list → .info fallback
     else:
-        try:  # settings needs a populated .env; the CLI shouldn't require one
-            from .config import settings
+        from .screen import fetch_sp500  # current index membership, sector-tagged
 
-            raw = getattr(settings, "bull_watchlist", DEFAULT_TICKERS)
-        except Exception:
-            raw = DEFAULT_TICKERS
-    tickers = [t.strip().upper() for t in raw.split(",") if t.strip()]
+        constituents = fetch_sp500()
+        if args.size:
+            constituents = constituents[: args.size]
+        tickers = [c["symbol"] for c in constituents]
+        universe_meta = {c["symbol"]: c for c in constituents}
 
     strategies = dict(REGISTRY)
     if args.strategies:
@@ -695,7 +812,15 @@ def main() -> None:
     start = datetime.strptime(args.start, "%Y-%m-%d").date()
     end = datetime.strptime(args.end, "%Y-%m-%d").date()
     report = run_backtest(
-        tickers, start, end, strategies, start_cash=args.cash, alloc_pct=args.alloc
+        tickers,
+        start,
+        end,
+        strategies,
+        start_cash=args.cash,
+        alloc_pct=args.alloc,
+        cost_bps=args.cost_bps,
+        optimistic=args.optimistic,
+        universe_meta=universe_meta,
     )
     _print_report(report, args.verbose)
 
