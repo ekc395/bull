@@ -118,7 +118,12 @@ export function PriceChart({
     const chart = chartRef.current;
     const candle = candleRef.current;
     if (!chart || !candle || !prices.data) return;
-    const bars = prices.data.bars;
+    // Guard against incomplete bars (null OHLC) — lightweight-charts asserts on
+    // them. The backend already drops these, but a single bad bar shouldn't
+    // crash the whole page render.
+    const bars = prices.data.bars.filter(
+      (b) => b.open != null && b.high != null && b.low != null && b.close != null,
+    );
 
     candle.setData(
       bars.map((b) => ({

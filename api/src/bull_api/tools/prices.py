@@ -27,6 +27,12 @@ def get_price_history(ticker: str, lookback_days: int = 400) -> pd.DataFrame:
         raise ValueError(f"No price data returned for {ticker!r}")
 
     df = df[["Open", "High", "Low", "Close", "Volume"]].copy()
+    # yfinance emits a placeholder row for the in-progress trading day with a
+    # Volume but NaN OHLC. That row is unusable for every consumer (charts,
+    # indicators, S/R) and serializes to JSON null, so drop incomplete bars here.
+    df = df.dropna(subset=["Open", "High", "Low", "Close"])
+    if df.empty:
+        raise ValueError(f"No price data returned for {ticker!r}")
     df.index = df.index.tz_localize(None)
     _cache[key] = df
     return df
