@@ -159,8 +159,8 @@ async def place_order(req: ExecuteOrderRequest, session: AsyncSession = Depends(
             shares = int(qty)  # brackets reject fractionals — floor
         else:
             prices = (verdict.facts_bundle_json or {}).get("prices") or []
-            last_close = prices[-1].get("close") if prices else None
-            if not last_close:
+            last_close = float(prices[-1].get("close") or 0) if prices else 0.0
+            if last_close <= 0:
                 raise HTTPException(
                     status_code=400,
                     detail="Verdict has no last close to size a bracket order from",
@@ -194,7 +194,7 @@ async def place_order(req: ExecuteOrderRequest, session: AsyncSession = Depends(
         alpaca_order_id=alpaca_resp["alpaca_order_id"],
         ticker=verdict.ticker,
         side=side,
-        qty=alpaca_resp.get("qty") or qty,
+        qty=alpaca_resp.get("qty") or (shares if bracket_plan is not None else qty),
         notional=alpaca_resp.get("notional") or notional,
         status=alpaca_resp["status"],
         submitted_at=alpaca_resp["submitted_at"] or now_utc(),

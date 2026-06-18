@@ -101,6 +101,10 @@ def place_order(
     `qty` (shares). Always paper."""
     if (notional is None) == (qty is None):
         raise ValueError("Provide exactly one of notional or qty")
+    if notional is not None and notional <= 0:
+        raise ValueError("notional must be positive")
+    if qty is not None and qty <= 0:
+        raise ValueError("qty must be positive")
     side_enum = OrderSide.BUY if side.lower() == "buy" else OrderSide.SELL
     request = MarketOrderRequest(
         symbol=symbol.upper(),
