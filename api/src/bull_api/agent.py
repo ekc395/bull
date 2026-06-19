@@ -153,7 +153,7 @@ def _coerce_report(value: Any) -> dict[str, str]:
     strings so the response schema stays valid.
     """
     if isinstance(value, dict):
-        out = {k: str(v) for k, v in value.items() if isinstance(v, str)}
+        out = {k: str(v) for k, v in value.items()}
     elif isinstance(value, str):
         out = {m.group(1): m.group(2).strip() for m in _PARAM_TAG_RE.finditer(value)}
         if not out:
@@ -296,6 +296,13 @@ async def analyze_ticker(
     # Opus occasionally drops `key_levels` despite the schema marking it required.
     # Fall back to the deterministic S/R in the facts bundle — same shape.
     key_levels = payload.get("key_levels") or facts["support_resistance"]
+
+    # Defensive: the model can omit required tool fields (e.g. truncated at
+    # max_tokens). Fill safe defaults so a missing field is a degraded verdict,
+    # not an unhandled KeyError → 500.
+    payload.setdefault("action", "HOLD")
+    payload.setdefault("confidence", 50)
+    payload.setdefault("headline", "")
 
     verdict = Verdict(
         ticker=ticker,
