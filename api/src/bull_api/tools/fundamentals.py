@@ -118,7 +118,7 @@ def _from_finnhub(ticker: str) -> Fundamentals | None:
 
     m = (metric or {}).get("metric", {}) or {}
     earnings_list = (cal or {}).get("earningsCalendar") or []
-    earnings_date = earnings_list[0].get("date") if earnings_list else None
+    earnings_date = (earnings_list[0] or {}).get("date") if earnings_list else None
 
     # Finnhub's marketCapitalization is in **millions** of USD.
     mcap_m = _to_float(profile.get("marketCapitalization"))

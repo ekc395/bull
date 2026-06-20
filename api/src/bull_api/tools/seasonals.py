@@ -57,7 +57,8 @@ def get_seasonals(ticker: str) -> Seasonals:
     if close.empty:
         raise ValueError(f"No seasonal data available for {ticker!r}")
 
-    close.index = close.index.tz_localize(None)
+    if close.index.tz is not None:
+        close.index = close.index.tz_localize(None)
 
     years: list[SeasonalYear] = []
     for y in range(current_year, start_year - 1, -1):

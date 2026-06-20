@@ -32,8 +32,13 @@ _yaml_data: dict[str, Any] | None = None
 def _load_yaml() -> dict[str, Any]:
     global _yaml_data
     if _yaml_data is None:
-        with _YAML_PATH.open() as f:
-            _yaml_data = yaml.safe_load(f) or {}
+        try:
+            with _YAML_PATH.open() as f:
+                _yaml_data = yaml.safe_load(f) or {}
+        except (FileNotFoundError, yaml.YAMLError):
+            # Override file is optional/empty by default — a missing or malformed
+            # file must not crash an analysis. Fall back to no overrides.
+            _yaml_data = {}
     return _yaml_data
 
 
