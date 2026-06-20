@@ -49,7 +49,7 @@ class RecallRow:
     ticker: str
     created_at: datetime
     action: str
-    confidence: int
+    confidence: int | None
     horizon_days: int
     return_pct: float
     setup: dict[str, Any]
@@ -106,7 +106,8 @@ def _format_block(ticker: str, rows: list[RecallRow], max_chars: int) -> str:
     for r in rows:
         sign = "+" if r.return_pct >= 0 else ""
         lines.append(
-            f"- {r.ticker} {r.created_at:%Y-%m-%d}: {r.action} @conf {r.confidence} "
+            f"- {r.ticker} {r.created_at:%Y-%m-%d}: {r.action} "
+            f"@conf {r.confidence if r.confidence is not None else '?'} "
             f"→ {sign}{r.return_pct:.1f}% realized over {r.horizon_days}d"
         )
     block = header + "\n" + "\n".join(lines)

@@ -46,7 +46,7 @@ def _find_entry_index(prices_df: pd.DataFrame, verdict_td: _date) -> int | None:
     matches = prices_df.index[prices_df.index.date >= verdict_td]
     if len(matches) == 0:
         return None
-    return int(prices_df.index.get_loc(matches[0]))
+    return int(prices_df.index.searchsorted(matches[0]))
 
 
 async def score_verdict(
