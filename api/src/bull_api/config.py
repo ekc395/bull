@@ -1,5 +1,6 @@
 """Settings loaded from .env via pydantic-settings."""
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -13,7 +14,7 @@ class Settings(BaseSettings):
     alphavantage_api_key: str = ""
 
     bull_model: str = "claude-opus-4-8"
-    bull_position_size_pct: float = 2.0
+    bull_position_size_pct: float = Field(default=2.0, gt=0, le=100)
 
     # Phase 4 (Part B): when set, agent.py appends the model's own past
     # verdict→outcome track record for similar setups to the uncached user

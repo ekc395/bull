@@ -121,7 +121,9 @@ class VerdictResponse(BaseModel):
 
 
 class AnalyzeRequest(BaseModel):
-    ticker: str
+    # Bounded + character-restricted: this is the request that triggers the paid
+    # Opus call, so an unvalidated string must not reach the prompt or yfinance.
+    ticker: str = Field(min_length=1, max_length=16, pattern=r"^[A-Za-z0-9.\-]+$")
     force: bool = False
     timeframe: Timeframe = "short"
 
