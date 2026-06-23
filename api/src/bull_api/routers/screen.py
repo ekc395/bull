@@ -6,6 +6,7 @@ The CLI (`python -m bull_api.screen`) is the same engine with a table printer.
 """
 
 import asyncio
+import logging
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
@@ -13,6 +14,7 @@ from fastapi import APIRouter, HTTPException, Query
 from ..screen import MAX_UNIVERSE_SIZE, run_screen
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 @router.get("/screen")
@@ -24,4 +26,7 @@ async def screen(
     try:
         return await asyncio.to_thread(run_screen, size, manual)
     except Exception as e:  # Yahoo screener hiccups shouldn't 500 opaquely
-        raise HTTPException(status_code=502, detail=f"screen failed: {e}") from e
+        # Log full detail server-side; never echo `e` to the client — a
+        # downstream httpx error can carry the data-source URL incl. its API key.
+        logger.exception("screen failed (size=%s, tickers=%s)", size, tickers)
+        raise HTTPException(status_code=502, detail="screener data source unavailable") from e
