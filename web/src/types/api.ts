@@ -62,6 +62,16 @@ export interface AlgoEvaluation {
   llm_review: LlmReview | null;
 }
 
+// Advisory Phase-3 gating/sizing decision attached to every verdict response
+// (mirrors PolicyDecisionResponse in schemas.py). `act=false` means the policy
+// advises against acting; `size_pct` is the suggested size as a % of equity.
+export interface PolicyDecisionResponse {
+  act: boolean;
+  size_pct: number;
+  rationale: string;
+  policy_version: string;
+}
+
 export interface VerdictResponse {
   id: number;
   ticker: string;
@@ -73,6 +83,8 @@ export interface VerdictResponse {
   created_at: string;
   model_used: string;
   timeframe: Timeframe;
+  // Backend always populates this via verdict_to_response (gate/sizing advice).
+  policy?: PolicyDecisionResponse | null;
   // Present only on short-mode verdicts from the strategy layer onward.
   algo?: AlgoEvaluation | null;
 }

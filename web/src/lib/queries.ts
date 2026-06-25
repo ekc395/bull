@@ -49,7 +49,10 @@ export const qk = {
 export function usePrices(ticker: string | null | undefined, bars = 252) {
   return useQuery({
     queryKey: ticker ? [...qk.prices(ticker), bars] : ["prices", "_none"],
-    queryFn: () => apiFetch<PricesResponse>(`/prices/${ticker}?bars=${bars}`),
+    queryFn: () =>
+      apiFetch<PricesResponse>(
+        `/prices/${encodeURIComponent(ticker!)}?bars=${bars}`,
+      ),
     enabled: !!ticker,
     refetchInterval: 60_000,
     staleTime: 30_000,
@@ -59,7 +62,10 @@ export function usePrices(ticker: string | null | undefined, bars = 252) {
 export function useFundamentals(ticker: string | null | undefined) {
   return useQuery({
     queryKey: ticker ? qk.fundamentals(ticker) : ["fundamentals", "_none"],
-    queryFn: () => apiFetch<FundamentalsResponse>(`/fundamentals/${ticker}`),
+    queryFn: () =>
+      apiFetch<FundamentalsResponse>(
+        `/fundamentals/${encodeURIComponent(ticker!)}`,
+      ),
     enabled: !!ticker,
     staleTime: 60 * 60_000, // backend caches 24h; an hour is plenty here
     retry: false, // 404 on unknown ticker shouldn't thrash
@@ -69,7 +75,10 @@ export function useFundamentals(ticker: string | null | undefined) {
 export function useFinancials(ticker: string | null | undefined) {
   return useQuery({
     queryKey: ticker ? qk.financials(ticker) : ["financials", "_none"],
-    queryFn: () => apiFetch<FinancialsResponse>(`/financials/${ticker}`),
+    queryFn: () =>
+      apiFetch<FinancialsResponse>(
+        `/financials/${encodeURIComponent(ticker!)}`,
+      ),
     enabled: !!ticker,
     staleTime: 60 * 60_000, // backend caches 24h
     retry: false,
@@ -79,7 +88,10 @@ export function useFinancials(ticker: string | null | undefined) {
 export function useSeasonals(ticker: string | null | undefined) {
   return useQuery({
     queryKey: ticker ? qk.seasonals(ticker) : ["seasonals", "_none"],
-    queryFn: () => apiFetch<SeasonalsResponse>(`/seasonals/${ticker}`),
+    queryFn: () =>
+      apiFetch<SeasonalsResponse>(
+        `/seasonals/${encodeURIComponent(ticker!)}`,
+      ),
     enabled: !!ticker,
     staleTime: 60 * 60_000, // backend caches 24h
     retry: false,
@@ -89,7 +101,10 @@ export function useSeasonals(ticker: string | null | undefined) {
 export function useNews(ticker: string | null | undefined, days = 7) {
   return useQuery({
     queryKey: ticker ? [...qk.news(ticker), days] : ["news", "_none"],
-    queryFn: () => apiFetch<NewsResponse>(`/news/${ticker}?days=${days}`),
+    queryFn: () =>
+      apiFetch<NewsResponse>(
+        `/news/${encodeURIComponent(ticker!)}?days=${days}`,
+      ),
     enabled: !!ticker,
     staleTime: 5 * 60_000,
   });
