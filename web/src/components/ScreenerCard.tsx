@@ -61,7 +61,7 @@ export function ScreenerCard() {
               {report.candidates.map((c) => (
                 <li key={c.ticker} className="border-b border-border last:border-0">
                   <Link
-                    href={`/ticker/${c.ticker}?tf=short`}
+                    href={`/ticker/${encodeURIComponent(c.ticker)}?tf=short`}
                     className="block px-4 py-2.5 transition-colors hover:bg-elevated"
                   >
                     <div className="flex items-center justify-between gap-2">
@@ -82,7 +82,7 @@ export function ScreenerCard() {
                       <span>E {c.entry?.toFixed(2) ?? "—"}</span>
                       <span className="text-bear">S {c.stop?.toFixed(2) ?? "—"}</span>
                       <span className="text-bull">T {c.target?.toFixed(2) ?? "—"}</span>
-                      <span>R:R {c.reward_risk ?? "—"}</span>
+                      <span>R:R {c.reward_risk != null ? c.reward_risk.toFixed(2) : "—"}</span>
                     </div>
                   </Link>
                 </li>
