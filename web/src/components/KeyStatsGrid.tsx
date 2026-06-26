@@ -114,7 +114,7 @@ function buildStats(ind: Indicators, price: number): Stat[] {
     label: "ATR (14)",
     value: fmt(ind.atr_14),
     hint:
-      ind.atr_14 == null
+      ind.atr_14 == null || price === 0
         ? "n/a"
         : `${((ind.atr_14 / price) * 100).toFixed(2)}% of price`,
     tone: "neutral",
@@ -138,7 +138,9 @@ function buildStats(ind: Indicators, price: number): Stat[] {
   }
 
   const volRatio =
-    ind.volume_current == null || ind.volume_20d_avg == null
+    ind.volume_current == null ||
+    ind.volume_20d_avg == null ||
+    ind.volume_20d_avg === 0
       ? null
       : ind.volume_current / ind.volume_20d_avg;
   stats.push({
@@ -170,6 +172,7 @@ function fmt(n: number | null, digits = 2) {
 }
 
 function pctDelta(price: number, ref: number) {
+  if (ref === 0) return "n/a";
   const pct = ((price - ref) / ref) * 100;
   return `${pct >= 0 ? "+" : ""}${pct.toFixed(2)}%`;
 }
