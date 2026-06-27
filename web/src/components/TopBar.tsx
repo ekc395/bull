@@ -61,7 +61,7 @@ export function TopBar() {
               onChange={(e) => setQ(e.target.value.toUpperCase())}
               placeholder="Search ticker (e.g. NVDA)"
               className="w-full bg-transparent text-[13px] text-primary placeholder:text-muted focus:outline-none"
-              maxLength={10}
+              maxLength={16}
               autoComplete="off"
               spellCheck={false}
             />

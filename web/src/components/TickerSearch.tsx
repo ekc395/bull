@@ -45,7 +45,7 @@ export function TickerSearch({ timeframe }: { timeframe?: Timeframe }) {
             "w-full rounded-md border border-border bg-elevated py-2 text-sm text-primary placeholder:text-muted focus:outline-none",
             preview ? "pl-9 pr-3" : "px-3",
           )}
-          maxLength={10}
+          maxLength={16}
           autoComplete="off"
           spellCheck={false}
         />
