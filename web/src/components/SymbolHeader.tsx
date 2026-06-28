@@ -20,12 +20,10 @@ const ACTION_PILL: Record<
 export function SymbolHeader({
   ticker,
   verdict,
-  exchange = "NASDAQ",
   right,
 }: {
   ticker: string;
   verdict?: VerdictResponse;
-  exchange?: string;
   right?: ReactNode;
 }) {
   const prices = usePrices(ticker);
@@ -68,9 +66,6 @@ export function SymbolHeader({
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
             <span className="font-mono font-semibold text-secondary">
               {ticker}
-            </span>
-            <span className="rounded bg-elevated px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-secondary">
-              {exchange}
             </span>
             {sector && (
               <>
