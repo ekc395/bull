@@ -3,12 +3,24 @@ from logging.config import fileConfig
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 
+from bull_api.config import settings
 from bull_api.db import Base
 from bull_api import models  # noqa: F401 — register models on Base.metadata
 
 config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
+
+
+def _sync_url(url: str) -> str:
+    """The app's async DB URL as a sync URL for Alembic. psycopg (v3) is already
+    sync-capable, so only the aiosqlite async marker needs stripping."""
+    return url.replace("+aiosqlite", "")
+
+
+# Migrate the DB the app actually uses (settings.database_url), not alembic.ini's
+# placeholder — otherwise online migrations target the wrong database.
+config.set_main_option("sqlalchemy.url", _sync_url(settings.database_url))
 
 target_metadata = Base.metadata
 

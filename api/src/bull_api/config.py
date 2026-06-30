@@ -7,7 +7,10 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
-    anthropic_api_key: str
+    # Optional so cost-free, no-LLM jobs (autotrade, scoring) run without it —
+    # e.g. the GitHub Actions cron never constructs an Anthropic client. The
+    # /analyze path then fails at call time (auth error) instead of at import.
+    anthropic_api_key: str = ""
     alpaca_api_key: str = ""
     alpaca_api_secret: str = ""
     finnhub_api_key: str = ""
