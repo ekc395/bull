@@ -239,10 +239,9 @@ async def close_position(symbol: str, session: AsyncSession = Depends(get_sessio
     return resp
 
 
-@router.post("/positions/sweep")
-async def sweep_positions(session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
-    """Time-stop enforcement + exit reconciliation. Manual trigger (cron it
-    yourself if you want), same convention as scoring.
+async def sweep(session: AsyncSession) -> dict[str, Any]:
+    """Time-stop enforcement + exit reconciliation. Callable directly (the
+    autotrade loop runs it before sizing new trades) or via the endpoint below.
 
     1. Any open position whose originating bracket entry is older than
        MAX_HOLD_TRADING_DAYS gets its legs cancelled and is closed at market
@@ -333,3 +332,10 @@ async def sweep_positions(session: AsyncSession = Depends(get_session)) -> dict[
         "closed": closed,
         "reconciled": reconciled,
     }
+
+
+@router.post("/positions/sweep")
+async def sweep_positions(session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    """Manual trigger for `sweep` (cron it yourself if you want), same
+    convention as scoring."""
+    return await sweep(session)
