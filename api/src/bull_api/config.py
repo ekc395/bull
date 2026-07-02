@@ -41,6 +41,10 @@ class Settings(BaseSettings):
     # manually. Size 0 = scan the whole index; >0 trims for quicker runs.
     bull_screen_universe: str = ""
     bull_screen_size: int = 0
+    # Max new positions the unattended autotrade loop opens per run
+    # (bull_api.autotrade). The policy gate caps each at 5% equity, so the
+    # default 3 is ≤~15% fresh exposure per trading day.
+    bull_autotrade_max_new: int = 3
 
     database_url: str = "sqlite+aiosqlite:///./bull.db"
 
