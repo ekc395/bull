@@ -12,6 +12,7 @@ from bull_api.policy.features import (
     Context,
     confidence_band,
     context_for,
+    effective_reward_risk,
     reward_risk_band,
 )
 
@@ -149,6 +150,41 @@ def _verdict(action="BUY", confidence=78, timeframe="short", facts=None):
         timeframe=timeframe,
         facts_bundle_json=_facts() if facts is None else facts,
     )
+
+
+def _algo_verdict(rr, active="turtle-20-v1", facts=None):
+    return SimpleNamespace(
+        action="BUY",
+        confidence=65,
+        timeframe="short",
+        facts_bundle_json=_facts() if facts is None else facts,
+        algo_json={"active_strategy": active, "evaluations": {active: {"reward_risk": rr}}},
+    )
+
+
+# --- effective_reward_risk: gate/bucket the trade actually placed -----------
+
+
+def test_effective_rr_prefers_strategy_bracket():
+    # S/R geometry here is a fat 5.0, but the strategy's own ATR bracket is 2.0.
+    assert effective_reward_risk(_algo_verdict(2.0)) == 2.0
+
+
+def test_effective_rr_uses_strategy_when_sr_is_na():
+    # Breakout at the top of the range: no resistance above → S/R R:R is None,
+    # yet the turtle bracket is a clean 2.0 (this is the case that was rejecting).
+    facts = _facts(support_resistance={"support": [{"price": 90.0}], "resistance": []})
+    assert _reward_risk_ratio("BUY", facts) is None
+    assert effective_reward_risk(_algo_verdict(2.0, facts=facts)) == 2.0
+
+
+def test_effective_rr_falls_back_to_sr_for_non_algo():
+    assert effective_reward_risk(_verdict()) == 5.0  # no algo_json → S/R ratio
+
+
+def test_context_for_algo_buckets_on_strategy_rr():
+    # S/R R:R is 5.0 (">=3"), but the bracket is 1.8 → bucket on the bracket.
+    assert context_for(_algo_verdict(1.8)).reward_risk_band == "1-2"
 
 
 def test_context_for_clean_buy():

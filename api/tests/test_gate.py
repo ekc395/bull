@@ -4,6 +4,8 @@ Pure `decide` / `fit_stats` over hand-built contexts and bucket stats: guardrail
 rejections, the cold-start / explore / exploit regimes, and the sizing cap.
 """
 
+from types import SimpleNamespace
+
 from bull_api.policy.analysis import Outcome
 from bull_api.policy.features import Context
 from bull_api.policy.gate import (
@@ -14,6 +16,7 @@ from bull_api.policy.gate import (
     SIZING_HORIZON,
     BucketStats,
     decide,
+    decision_for_verdict,
     fit_stats,
 )
 
@@ -114,6 +117,38 @@ def test_exploit_size_capped():
     stats = BucketStats(50, 100.0, 0.9, SIZING_HORIZON)
     d = decide(_ctx(), stats, confidence=100, reward_risk_ratio=5.0, base_size_pct=4.0)
     assert d.size_pct == MAX_SIZE_PCT
+
+
+# --- decision_for_verdict: gate on the strategy bracket, not S/R -----------
+
+
+def test_decision_for_verdict_gates_on_strategy_rr():
+    # A turtle breakout enters at a new 20-day high, so there's no resistance
+    # above → S/R reward:risk is None (would trip the RR floor). The order that
+    # actually gets placed is the ATR bracket (R:R 2.0), so the gate must act.
+    facts = {
+        "prices": [{"close": 100.0}],
+        "indicators": {"sma_50": 95.0, "sma_200": 90.0, "macd_hist": 0.5},
+        "support_resistance": {"support": [{"price": 90.0}], "resistance": []},
+        "market_context": {
+            "spy": {"above_sma_50": True},
+            "sector": {"above_sma_50": True},
+            "vix_state": "calm",
+        },
+        "fundamentals": {"days_until_earnings": 40},
+    }
+    verdict = SimpleNamespace(
+        action="BUY",
+        confidence=65,
+        timeframe="short",
+        facts_bundle_json=facts,
+        algo_json={
+            "active_strategy": "turtle-20-v1",
+            "evaluations": {"turtle-20-v1": {"reward_risk": 2.0}},
+        },
+    )
+    d = decision_for_verdict(verdict, [])  # no outcomes yet → cold-start
+    assert d.act is True and d.size_pct > 0
 
 
 # --- fit_stats -------------------------------------------------------------

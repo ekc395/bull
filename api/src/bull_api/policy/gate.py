@@ -32,7 +32,7 @@ from ..checks import compute_signals
 from ..config import settings
 from ..scoring import _classify_hit
 from .analysis import Outcome
-from .features import Context, context_for
+from .features import Context, context_for, effective_reward_risk
 
 if TYPE_CHECKING:
     from ..models import Verdict
@@ -206,6 +206,8 @@ def decision_for_verdict(
         context,
         stats,
         confidence=verdict.confidence,
-        reward_risk_ratio=signals.get("reward_risk_ratio"),
+        # Gate the trade that's actually placed: an algo bracket's own R:R, else
+        # the S/R geometry for non-algo verdicts. See features.effective_reward_risk.
+        reward_risk_ratio=effective_reward_risk(verdict, signals),
         base_size_pct=base_size_pct,
     )

@@ -19,7 +19,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from ..checks import compute_signals
+from ..checks import Signals, compute_signals
 
 if TYPE_CHECKING:
     from ..models import Verdict
@@ -51,6 +51,25 @@ def reward_risk_band(ratio: float | None) -> str:
     if ratio < 3.0:
         return "2-3"
     return ">=3"
+
+
+def effective_reward_risk(verdict: "Verdict", signals: Signals | None = None) -> float | None:
+    """The reward:risk the trade will actually run on.
+
+    Short-mode algo verdicts execute the active strategy's ATR bracket, whose
+    reward:risk is fixed by the rule (e.g. turtle's 2R target) — not the S/R
+    geometry `compute_signals` derives. Both the gate's RR guardrail and the
+    outcome bucketing should judge the trade that gets placed, so prefer the
+    active strategy's own `reward_risk`; fall back to the S/R ratio for non-algo
+    (long-mode / pre-strategy) verdicts.
+    """
+    algo = getattr(verdict, "algo_json", None) or {}
+    active_eval = (algo.get("evaluations") or {}).get(algo.get("active_strategy") or "")
+    if active_eval and active_eval.get("reward_risk") is not None:
+        return active_eval["reward_risk"]
+    if signals is None:
+        signals = compute_signals({"action": verdict.action}, verdict.facts_bundle_json or {})
+    return signals.get("reward_risk_ratio")
 
 
 @dataclass(frozen=True)
@@ -104,7 +123,7 @@ def context_for(verdict: "Verdict") -> Context:
         action=verdict.action,
         timeframe=verdict.timeframe,
         confidence_band=confidence_band(verdict.confidence),
-        reward_risk_band=reward_risk_band(signals.get("reward_risk_ratio")),
+        reward_risk_band=reward_risk_band(effective_reward_risk(verdict, signals)),
         trend_aligned=signals.get("trend_aligned"),
         sector_above_sma_50=signals.get("sector_above_sma_50"),
         market_above_sma_50=signals.get("spy_above_sma_50"),
