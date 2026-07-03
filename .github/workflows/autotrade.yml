@@ -1,0 +1,76 @@
+name: autotrade
+
+# Unattended daily algo paper-trading loop (bull_api.autotrade). Zero API cost —
+# no Anthropic client is constructed; only the Supabase DB + Alpaca paper are touched.
+#
+# Timing: 22:00 UTC is after the 16:00 ET close in both EST and EDT (decide-at-close,
+# fills next open — how backtest.simulate models it). GitHub cron is UTC and does not
+# observe DST, so the ET offset drifts an hour across the year; that's fine for a
+# decide-at-close job. Market holidays that fall on a weekday are handled inside the
+# loop by the stale-session guard (it skips placement when the last bar isn't today),
+# not by the cron.
+
+on:
+  schedule:
+    - cron: "0 22 * * 1-5"   # Mon–Fri, 22:00 UTC
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Screen + gate + log only; no writes/orders"
+        type: boolean
+        default: false
+      max_new:
+        description: "Max new positions to open (blank = config default)"
+        type: string
+        default: ""
+      run_migrations:
+        description: "Run `alembic upgrade head` first (one-time DB setup)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+# Never let two runs trade concurrently.
+concurrency:
+  group: autotrade
+  cancel-in-progress: false
+
+jobs:
+  autotrade:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: api
+    env:
+      # DATABASE_URL is the Supabase URL (postgresql+psycopg://…). No
+      # ANTHROPIC_API_KEY: this loop never calls Opus (config makes it optional).
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      ALPACA_API_KEY: ${{ secrets.ALPACA_API_KEY }}
+      ALPACA_API_SECRET: ${{ secrets.ALPACA_API_SECRET }}
+      PYTHONPATH: src
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install
+        run: pip install -e .
+
+      - name: Run migrations (manual, opt-in)
+        if: ${{ github.event.inputs.run_migrations == 'true' }}
+        run: alembic upgrade head
+
+      - name: Autotrade
+        run: |
+          ARGS=""
+          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
+            ARGS="$ARGS --dry-run"
+          fi
+          if [ -n "${{ github.event.inputs.max_new }}" ]; then
+            ARGS="$ARGS --max-new ${{ github.event.inputs.max_new }}"
+          fi
+          python -m bull_api.autotrade $ARGS
