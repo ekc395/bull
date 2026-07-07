@@ -41,10 +41,12 @@ class KeyLevels(BaseModel):
 
 
 class Report(BaseModel):
-    technical: str
-    fundamentals_and_supply_chain: str
-    news_sentiment: str
-    risks: str
+    # The narrative sections default to "" so reasoning-only rows (autotrade's
+    # no-LLM verdicts) still validate; the UI skips empty sections.
+    technical: str = ""
+    fundamentals_and_supply_chain: str = ""
+    news_sentiment: str = ""
+    risks: str = ""
     reasoning: str
 
 

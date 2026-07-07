@@ -15,8 +15,9 @@ from bull_api import autotrade
 from bull_api.db import Base
 from bull_api.models import Order, PolicyDecision, Verdict
 from bull_api.policy.gate import PolicyDecision as GateDecision
+from bull_api.routers import verdict_to_response
 from bull_api.strategy.base import StrategyDecision
-from bull_api.time import trading_day
+from bull_api.time import now_utc, trading_day
 
 
 @pytest_asyncio.fixture
@@ -254,3 +255,18 @@ async def test_happy_path_places_bracket_with_strategy_levels(session, monkeypat
     ev = verdict.algo_json["evaluations"]["turtle-20-v1"]
     assert ev["stop"] == 96.0 and ev["target"] == 108.0
     assert verdict.algo_json["llm_review"] is None
+
+
+def test_minted_verdict_serializes_to_response():
+    # Autotrade rows carry a reasoning-only report_json; the listing endpoint
+    # must still validate them (regression: one such row 500'd GET /verdicts).
+    verdict = autotrade._mint_verdict(
+        "AAA", "turtle-20-v1", {"turtle-20-v1": make_decision("BUY")}, make_facts("2026-07-06")
+    )
+    verdict.id = 1
+    verdict.created_at = now_utc()
+
+    resp = verdict_to_response(verdict)
+    assert resp.report.reasoning
+    assert resp.report.technical == ""
+    assert resp.report.risks == ""
