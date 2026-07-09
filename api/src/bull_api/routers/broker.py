@@ -250,6 +250,9 @@ async def sweep(session: AsyncSession) -> dict[str, Any]:
     2. Filled bracket legs that happened Alpaca-side since the last sweep are
        inserted as local sell Orders (linked to the entry's verdict) so the
        trade journal shows the full round trip.
+    3. Local rows inserted at submission time (market buys, manual closes,
+       time stops) carry no fill data — backfill status/qty/filled_avg_price
+       from Alpaca once filled, so /trades can compute realized P&L.
     """
     try:
         positions = await asyncio.to_thread(alpaca.get_positions)
@@ -295,6 +298,24 @@ async def sweep(session: AsyncSession) -> dict[str, Any]:
         closed.append(symbol)
         logger.info("sweep: time-stopped %s after %d trading days", symbol, age_days)
 
+    # Backfill: rows are persisted from the submission response, so market
+    # orders start with no fill (and manual/time-stop closes with no qty).
+    # `filled_qty` covers notional entries where qty is unknown at submit.
+    local_by_alpaca_id = {o.alpaca_order_id: o for o in local}
+    backfilled: list[str] = []
+    for r in recent_alpaca:
+        o = local_by_alpaca_id.get(r["alpaca_order_id"])
+        if o is None or r["status"] != "filled":
+            continue
+        if o.status == "filled" and o.filled_avg_price is not None and o.qty is not None:
+            continue
+        o.status = r["status"]
+        o.filled_avg_price = o.filled_avg_price or r.get("filled_avg_price") or None
+        o.qty = o.qty or r.get("qty") or r.get("filled_qty") or None
+        backfilled.append(o.alpaca_order_id)
+    if backfilled:
+        await session.commit()
+
     # Reconcile: map known bracket leg ids → exit reason, insert missing fills.
     leg_index: dict[str, tuple[Order, str]] = {}
     for o in local:
@@ -330,6 +351,7 @@ async def sweep(session: AsyncSession) -> dict[str, Any]:
     return {
         "checked_positions": len(positions),
         "closed": closed,
+        "backfilled": backfilled,
         "reconciled": reconciled,
     }
 

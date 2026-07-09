@@ -218,6 +218,7 @@ def get_recent_orders(limit: int = 50) -> list[dict[str, Any]]:
             "symbol": o.symbol,
             "side": _enum_value(o.side),
             "qty": _f(o.qty),
+            "filled_qty": _f(o.filled_qty),
             "notional": _f(o.notional),
             "status": _enum_value(o.status),
             "submitted_at": o.submitted_at,
