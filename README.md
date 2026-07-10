@@ -78,13 +78,7 @@ npm run dev                          # http://localhost:3000
 
 The only paid surface is the Anthropic API. Everything else (yfinance, Google News RSS, Alpaca paper, Finnhub/Alpha Vantage free tiers) costs nothing.
 
-| Model                         | Approx. cost / analysis |
-| ----------------------------- | ----------------------- |
-| `claude-opus-4-8` (default)   | $0.10 – $0.15           |
-| `claude-sonnet-4-6`           | $0.02 – $0.03           |
-| `claude-haiku-4-5-20251001`   | $0.005 – $0.01          |
-
-Switch models via the `BULL_MODEL` env var. Same-day re-analyses of a ticker hit the verdict cache for free.
+Analyses run on `claude-opus-4-8` at roughly $0.10 – $0.15 each. Same-day re-analyses of a ticker hit the verdict cache for free.
 
 ## Tests
 
