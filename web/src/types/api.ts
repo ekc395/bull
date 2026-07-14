@@ -137,6 +137,24 @@ export interface OrderResponse {
   exit_reason?: string | null; // stop | target | time_stop | manual
 }
 
+// A round-trip trade computed from order fills (see GET /trades). Null buy
+// fields = orphan sell with no matching entry; null sell fields = still open.
+export interface TradeResponse {
+  ticker: string;
+  status: "open" | "closed";
+  qty: number | null;
+  buy_order_id: number | null;
+  sell_order_id: number | null;
+  buy_submitted_at: string | null;
+  sell_submitted_at: string | null;
+  buy_price: number | null;
+  sell_price: number | null;
+  notional: number | null;
+  exit_reason: string | null; // stop | target | time_stop | manual
+  pnl: number | null;
+  return_pct: number | null;
+}
+
 export interface ExecuteOrderRequest {
   verdict_id: number;
   notional?: number;

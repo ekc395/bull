@@ -18,6 +18,7 @@ import type {
   PricesResponse,
   ScreenResponse,
   Timeframe,
+  TradeResponse,
   VerdictResponse,
 } from "../types/api";
 
@@ -27,6 +28,7 @@ export const qk = {
   account: ["account"] as const,
   positions: ["positions"] as const,
   orders: ["orders"] as const,
+  trades: ["trades"] as const,
   verdicts: ["verdicts"] as const,
   verdict: (id: number) => ["verdicts", id] as const,
   prices: (ticker: string) => ["prices", ticker.toUpperCase()] as const,
@@ -146,6 +148,14 @@ export function useOrders(limit = 50) {
   });
 }
 
+export function useTrades(limit = 50) {
+  return useQuery({
+    queryKey: [...qk.trades, limit] as const,
+    queryFn: () => apiFetch<TradeResponse[]>(`/trades?limit=${limit}`),
+    refetchInterval: 15_000,
+  });
+}
+
 export function useVerdicts(limit = 50) {
   return useQuery({
     // "list" disambiguates from the single-verdict key qk.verdict(id) =
@@ -223,6 +233,7 @@ export function useExecuteOrder() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: qk.positions });
       qc.invalidateQueries({ queryKey: qk.orders });
+      qc.invalidateQueries({ queryKey: qk.trades });
       qc.invalidateQueries({ queryKey: qk.account });
     },
   });
@@ -238,6 +249,7 @@ export function useClosePosition() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: qk.positions });
       qc.invalidateQueries({ queryKey: qk.orders });
+      qc.invalidateQueries({ queryKey: qk.trades });
       qc.invalidateQueries({ queryKey: qk.account });
     },
   });
