@@ -170,6 +170,28 @@ class OrderResponse(BaseModel):
     exit_reason: str | None = None  # stop | target | time_stop | manual
 
 
+class TradeResponse(BaseModel):
+    """A round-trip trade: an entry buy paired with its exit sell (or still open).
+
+    Computed on read from `orders` rows — no storage. Null buy fields mean an
+    orphan sell with no matching entry; null sell fields mean the lot is open.
+    """
+
+    ticker: str
+    status: Literal["open", "closed"]
+    qty: float | None
+    buy_order_id: int | None
+    sell_order_id: int | None
+    buy_submitted_at: UTCDateTime | None
+    sell_submitted_at: UTCDateTime | None
+    buy_price: float | None
+    sell_price: float | None
+    notional: float | None
+    exit_reason: str | None  # stop | target | time_stop | manual
+    pnl: float | None
+    return_pct: float | None
+
+
 class ExecuteOrderRequest(BaseModel):
     verdict_id: int
     notional: float | None = Field(default=None, gt=0)
