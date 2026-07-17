@@ -21,9 +21,10 @@ router = APIRouter()
 @router.get("/verdicts", response_model=list[VerdictResponse])
 async def list_verdicts(
     limit: int = Query(50, ge=1, le=200),
+    include_shadow: bool = Query(False, description="include score-only shadow verdicts"),
     session: AsyncSession = Depends(get_session),
 ) -> list[VerdictResponse]:
-    rows = await vrepo.list_recent(limit, session)
+    rows = await vrepo.list_recent(limit, session, include_shadow=include_shadow)
     outcomes = await collect_outcomes(session)  # shared across all rows
     return [verdict_to_response(v, decision_for_verdict(v, outcomes)) for v in rows]
 

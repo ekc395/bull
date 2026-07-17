@@ -18,6 +18,11 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from .db import Base
 from .time import now_utc
 
+# Sentinel `model_used` for score-only shadow verdicts minted from non-active
+# strategies (plan.md → Shadow verdict scoring). Excluded from the /analyze
+# daily cache and verdict listings; pooled into gate outcomes like any model.
+SHADOW_MODEL = "algo-shadow"
+
 
 class Verdict(Base):
     __tablename__ = "verdicts"

@@ -185,14 +185,39 @@ def _evaluate_one(entry: dict[str, Any]) -> dict[str, Any] | None:
         "others": {
             name: d.candidate_action for name, d in decisions.items() if d is not active
         },
+        # Full decisions for non-active BUYs — the shadow-verdict feed (see
+        # plan.md → Shadow verdict scoring). Kept whether or not active fired:
+        # the overlap makes same-day strategy comparisons apples-to-apples.
+        "shadow": {
+            name: d
+            for name, d in decisions.items()
+            if d is not active and d.candidate_action == "BUY"
+        },
     }
 
 
 def rank_results(rows: list[dict[str, Any]]) -> dict[str, Any]:
-    """Pure: split evaluated rows into ranked candidates vs collapsed holds."""
+    """Pure: split evaluated rows into ranked candidates vs collapsed holds,
+    plus non-active-strategy BUYs as `shadow_candidates`."""
     candidates = []
     holds = []
+    shadow_candidates = []
     for r in rows:
+        for name, d in (r.get("shadow") or {}).items():
+            shadow_candidates.append(
+                {
+                    "ticker": r["ticker"],
+                    "strategy": name,
+                    "base_confidence": d.base_confidence,
+                    "reason": d.reason,
+                    "entry": d.entry,
+                    "stop": d.stop,
+                    "target": d.target,
+                    "reward_risk": d.reward_risk,
+                    "filters": d.filters,
+                    "setup": d.setup,
+                }
+            )
         d = r["active"]
         if d.candidate_action == "BUY":
             candidates.append(
@@ -213,7 +238,8 @@ def rank_results(rows: list[dict[str, Any]]) -> dict[str, Any]:
         else:
             holds.append({"ticker": r["ticker"], "reason": d.reason})
     candidates.sort(key=lambda c: (-(c["base_confidence"]), c["ticker"]))
-    return {"candidates": candidates, "holds": holds}
+    shadow_candidates.sort(key=lambda c: (-(c["base_confidence"]), c["ticker"], c["strategy"]))
+    return {"candidates": candidates, "holds": holds, "shadow_candidates": shadow_candidates}
 
 
 def run_screen(size: int | None = None, tickers: list[str] | None = None) -> dict[str, Any]:
@@ -268,6 +294,10 @@ def _cli() -> None:
             "\nNext: POST /analyze {ticker, timeframe: 'short'} on the ones you "
             "like — that's the paid Opus veto/shade step."
         )
+    if report["shadow_candidates"]:
+        print(f"\n{len(report['shadow_candidates'])} shadow setup(s) from non-active strategies:")
+        for c in report["shadow_candidates"]:
+            print(f"  {c['ticker']:6s} {c['strategy']}  conf={c['base_confidence']:>2d}  {c['reason']}")
     failed = report["universe_size"] - report["evaluated"]
     if failed:
         print(f"\n({failed} ticker(s) skipped on data errors — see warnings above)")

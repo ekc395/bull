@@ -13,8 +13,9 @@ from sqlalchemy.pool import StaticPool
 
 from bull_api import autotrade
 from bull_api.db import Base
-from bull_api.models import Order, PolicyDecision, Verdict
+from bull_api.models import SHADOW_MODEL, Order, PolicyDecision, Verdict
 from bull_api.policy.gate import PolicyDecision as GateDecision
+from bull_api.repos import verdicts as vrepo
 from bull_api.routers import verdict_to_response
 from bull_api.strategy.base import StrategyDecision
 from bull_api.time import now_utc, trading_day
@@ -37,10 +38,10 @@ async def session():
     await engine.dispose()
 
 
-def make_decision(action: str = "BUY") -> StrategyDecision:
+def make_decision(action: str = "BUY", strategy: str = "turtle-20-v1") -> StrategyDecision:
     if action == "BUY":
         return StrategyDecision(
-            strategy="turtle-20-v1",
+            strategy=strategy,
             candidate_action="BUY",
             base_confidence=65,
             reason="donchian_20_breakout",
@@ -52,7 +53,7 @@ def make_decision(action: str = "BUY") -> StrategyDecision:
             reward_risk=2.0,
         )
     return StrategyDecision(
-        strategy="turtle-20-v1",
+        strategy=strategy,
         candidate_action="HOLD",
         base_confidence=60,
         reason="no setup",
@@ -255,6 +256,141 @@ async def test_happy_path_places_bracket_with_strategy_levels(session, monkeypat
     ev = verdict.algo_json["evaluations"]["turtle-20-v1"]
     assert ev["stop"] == 96.0 and ev["target"] == 108.0
     assert verdict.algo_json["llm_review"] is None
+
+
+def patch_shadow(monkeypatch, *, shadow_candidates, shadow_decision, facts):
+    """On top of patch_common: no active candidates, a pullback shadow feed."""
+    monkeypatch.setattr(
+        autotrade,
+        "run_screen",
+        lambda *a, **k: {"candidates": [], "shadow_candidates": shadow_candidates},
+    )
+    monkeypatch.setattr(
+        autotrade,
+        "REGISTRY",
+        {
+            "turtle-20-v1": lambda f: make_decision("HOLD"),
+            "pullback-v1": lambda f: shadow_decision,
+        },
+    )
+    monkeypatch.setattr(autotrade, "build_screen_facts", lambda ticker, *a, **k: facts)
+
+
+async def test_shadow_verdict_minted_score_only(session, monkeypatch):
+    patch_common(
+        monkeypatch,
+        decision=make_decision("HOLD"),
+        facts=make_facts(trading_day().isoformat()),
+        gate_decision=gate(True),
+        positions=[],
+    )
+    patch_shadow(
+        monkeypatch,
+        shadow_candidates=[{"ticker": "AAA", "strategy": "pullback-v1"}],
+        shadow_decision=make_decision("BUY", strategy="pullback-v1"),
+        facts=make_facts(trading_day().isoformat()),
+    )
+
+    summary = await autotrade.run_autotrade(session, max_new=3, dry_run=False)
+
+    assert [(s["ticker"], s["strategy"]) for s in summary["shadow"]] == [("AAA", "pullback-v1")]
+    verdict = (await session.execute(select(Verdict))).scalars().one()
+    assert verdict.model_used == SHADOW_MODEL
+    assert verdict.action == "BUY"
+    assert verdict.algo_json["active_strategy"] == "pullback-v1"
+    # Score-only: no gate decision, no order.
+    assert await _count(session, PolicyDecision) == 0
+    assert await _count(session, Order) == 0
+    # Shadow rows never satisfy the /analyze cache, watchlist, or listings…
+    assert await vrepo.get_for_today("AAA", trading_day(), session) is None
+    assert await vrepo.latest_for("AAA", session, timeframe="short") is None
+    assert await vrepo.list_recent(10, session) == []
+    # …but are reachable when explicitly asked for.
+    assert len(await vrepo.list_recent(10, session, include_shadow=True)) == 1
+
+
+async def test_shadow_rerun_same_day_is_idempotent(session, monkeypatch):
+    patch_common(
+        monkeypatch,
+        decision=make_decision("HOLD"),
+        facts=make_facts(trading_day().isoformat()),
+        gate_decision=gate(True),
+        positions=[],
+    )
+    patch_shadow(
+        monkeypatch,
+        shadow_candidates=[{"ticker": "AAA", "strategy": "pullback-v1"}],
+        shadow_decision=make_decision("BUY", strategy="pullback-v1"),
+        facts=make_facts(trading_day().isoformat()),
+    )
+
+    await autotrade.run_autotrade(session, max_new=3, dry_run=False)
+    summary = await autotrade.run_autotrade(session, max_new=3, dry_run=False)
+
+    assert summary["shadow"] == []
+    assert await _count(session, Verdict) == 1
+
+
+async def test_shadow_reeval_hold_not_minted(session, monkeypatch):
+    patch_common(
+        monkeypatch,
+        decision=make_decision("HOLD"),
+        facts=make_facts(trading_day().isoformat()),
+        gate_decision=gate(True),
+        positions=[],
+    )
+    patch_shadow(
+        monkeypatch,
+        shadow_candidates=[{"ticker": "AAA", "strategy": "pullback-v1"}],
+        shadow_decision=make_decision("HOLD", strategy="pullback-v1"),  # re-eval flips it
+        facts=make_facts(trading_day().isoformat()),
+    )
+
+    summary = await autotrade.run_autotrade(session, max_new=3, dry_run=False)
+    assert summary["shadow"] == []
+    assert await _count(session, Verdict) == 0
+
+
+async def test_shadow_dry_run_no_writes(session, monkeypatch):
+    patch_common(
+        monkeypatch,
+        decision=make_decision("HOLD"),
+        facts=make_facts(trading_day().isoformat()),
+        gate_decision=gate(True),
+        positions=[],
+    )
+    patch_shadow(
+        monkeypatch,
+        shadow_candidates=[{"ticker": "AAA", "strategy": "pullback-v1"}],
+        shadow_decision=make_decision("BUY", strategy="pullback-v1"),
+        facts=make_facts(trading_day().isoformat()),
+    )
+
+    summary = await autotrade.run_autotrade(session, max_new=3, dry_run=True)
+
+    assert summary["shadow"] == [{"ticker": "AAA", "strategy": "pullback-v1", "dry_run": True}]
+    assert await _count(session, Verdict) == 0
+
+
+async def test_shadow_daily_cap(session, monkeypatch):
+    tickers = [f"T{i:02d}" for i in range(autotrade.MAX_SHADOW_PER_DAY + 2)]
+    patch_common(
+        monkeypatch,
+        decision=make_decision("HOLD"),
+        facts=make_facts(trading_day().isoformat()),
+        gate_decision=gate(True),
+        positions=[],
+    )
+    patch_shadow(
+        monkeypatch,
+        shadow_candidates=[{"ticker": t, "strategy": "pullback-v1"} for t in tickers],
+        shadow_decision=make_decision("BUY", strategy="pullback-v1"),
+        facts=make_facts(trading_day().isoformat()),
+    )
+
+    summary = await autotrade.run_autotrade(session, max_new=3, dry_run=False)
+    assert len(summary["shadow"]) == autotrade.MAX_SHADOW_PER_DAY
+    assert await _count(session, Verdict) == autotrade.MAX_SHADOW_PER_DAY
 
 
 def test_minted_verdict_serializes_to_response():

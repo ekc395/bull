@@ -46,7 +46,24 @@ def test_rank_results_splits_and_sorts():
 
 def test_rank_results_empty():
     out = screen.rank_results([])
-    assert out == {"candidates": [], "holds": []}
+    assert out == {"candidates": [], "holds": [], "shadow_candidates": []}
+
+
+def test_rank_results_emits_shadow_candidates():
+    overlap = row("AAA", "BUY", 65)  # active fired too — overlap row must still emit
+    overlap["shadow"] = {"pullback-v1": decision("BUY", 70, "pullback-v1")}
+    flat = row("BBB", "HOLD")
+    flat["shadow"] = {"connors-rsi2-v1": decision("BUY", 60, "connors-rsi2-v1")}
+    out = screen.rank_results([overlap, flat])
+
+    assert [(c["ticker"], c["strategy"]) for c in out["shadow_candidates"]] == [
+        ("AAA", "pullback-v1"),
+        ("BBB", "connors-rsi2-v1"),
+    ]
+    assert out["shadow_candidates"][0]["entry"] == 100.0
+    assert out["shadow_candidates"][0]["base_confidence"] == 70
+    # shadow rows don't leak into the tradable candidates list
+    assert [c["ticker"] for c in out["candidates"]] == ["AAA"]
 
 
 def test_parse_constituents_normalizes_and_maps():

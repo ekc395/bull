@@ -29,7 +29,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from .broker import alpaca
 from .config import settings
 from .db import SessionLocal
-from .models import Verdict
+from .models import SHADOW_MODEL, Verdict
 from .policy.analysis import collect_outcomes
 from .policy.gate import decision_for_verdict
 from .repos import policy as prepo
@@ -43,9 +43,18 @@ from .time import trading_day
 
 logger = logging.getLogger(__name__)
 
+# Daily cap on score-only shadow verdicts (plan.md → Shadow verdict scoring):
+# bounds the nightly scoring loop's per-verdict price fetches, nothing else.
+MAX_SHADOW_PER_DAY = 10
+
 
 def _mint_verdict(
-    ticker: str, active_name: str, decisions: dict[str, Any], facts: dict[str, Any]
+    ticker: str,
+    active_name: str,
+    decisions: dict[str, Any],
+    facts: dict[str, Any],
+    *,
+    model: str = "algo",
 ) -> Verdict:
     """A deterministic Verdict from the strategy layer — no LLM. Mirrors the
     Verdict constructed at the end of `agent.analyze_ticker` (same columns and
@@ -60,9 +69,10 @@ def _mint_verdict(
         key_levels_json=facts["support_resistance"],
         # created_at auto-fills via the model's now_utc default.
         timeframe="short",
-        # Sentinel model tag: keeps these no-LLM rows separable in scoring's
-        # by_model breakdown; outcomes still pool across models for the gate.
-        model_used="algo",
+        # Sentinel model tag ("algo", or SHADOW_MODEL for score-only shadows):
+        # keeps no-LLM rows separable in scoring's by_model breakdown; outcomes
+        # still pool across models for the gate.
+        model_used=model,
         candidate_action=active.candidate_action,
         candidate_confidence=active.base_confidence,
         algo_json={
@@ -73,6 +83,57 @@ def _mint_verdict(
         raw_response_json={"source": "autotrade"},
         facts_bundle_json=facts,
     )
+
+
+async def _mint_shadow_verdicts(
+    session: AsyncSession, report: dict[str, Any], *, dry_run: bool
+) -> list[dict[str, Any]]:
+    """Persist score-only verdicts for non-active-strategy BUYs (plan.md →
+    Shadow verdict scoring). No gate, no policy_decisions row, no order — the
+    rows exist purely so `score_pending_verdicts` accumulates an unbiased live
+    track record per strategy. Idempotent per (ticker, strategy, trading day).
+    """
+    shadow_cands = report.get("shadow_candidates", [])[:MAX_SHADOW_PER_DAY]
+    if not shadow_cands:
+        return []
+
+    today = trading_day()
+    seen: set[tuple[str, str | None]] = set()
+    if not dry_run:
+        existing = await vrepo.list_for_day(today, session, model_used=SHADOW_MODEL)
+        seen = {(v.ticker, (v.algo_json or {}).get("active_strategy")) for v in existing}
+
+    minted: list[dict[str, Any]] = []
+    facts_cache: dict[str, dict[str, Any]] = {}  # overlap: two strategies, one ticker
+    for c in shadow_cands:
+        ticker, strat = c["ticker"], c["strategy"]
+        if (ticker, strat) in seen:
+            continue
+        facts = facts_cache.get(ticker)
+        if facts is None:
+            try:
+                facts = facts_cache[ticker] = build_screen_facts(ticker)
+            except Exception as e:
+                logger.warning("autotrade: shadow facts fetch failed for %s: %s", ticker, e)
+                continue
+        prices = facts.get("prices") or []
+        if not prices or prices[-1]["date"] != today.isoformat():
+            continue  # weekend/holiday: same stale-session rule as the active path
+        decisions = {name: fn(facts) for name, fn in REGISTRY.items()}
+        decision = decisions.get(strat)
+        if decision is None or decision.candidate_action != "BUY":
+            continue  # re-eval with the real earnings date flipped it, or strategy retired
+        if dry_run:
+            logger.info("autotrade[dry-run]: shadow %s %s", strat, ticker)
+            minted.append({"ticker": ticker, "strategy": strat, "dry_run": True})
+            continue
+        verdict = await vrepo.insert(
+            _mint_verdict(ticker, strat, decisions, facts, model=SHADOW_MODEL), session
+        )
+        seen.add((ticker, strat))
+        minted.append({"ticker": ticker, "strategy": strat, "verdict_id": verdict.id})
+        logger.info("autotrade: shadow verdict %s %s (verdict %d)", strat, ticker, verdict.id)
+    return minted
 
 
 async def run_autotrade(
@@ -90,6 +151,7 @@ async def run_autotrade(
         "candidates": 0,
         "placed": [],
         "skipped": [],
+        "shadow": [],
     }
 
     if not dry_run:
@@ -97,6 +159,9 @@ async def run_autotrade(
         summary["scored"] = await score_pending_verdicts(session)
 
     report = run_screen()
+    # Shadow verdicts first: they need no Alpaca account and must run even on
+    # days the active strategy is flat.
+    summary["shadow"] = await _mint_shadow_verdicts(session, report, dry_run=dry_run)
     candidates = report.get("candidates", [])[:max_new]
     summary["candidates"] = len(candidates)
     if not candidates:
@@ -191,14 +256,18 @@ async def run_autotrade(
         held.add(ticker)
 
     logger.info(
-        "autotrade: candidates=%d placed=%d skipped=%d dry_run=%s",
-        summary["candidates"], len(summary["placed"]), len(summary["skipped"]), dry_run,
+        "autotrade: candidates=%d placed=%d skipped=%d shadow=%d dry_run=%s",
+        summary["candidates"], len(summary["placed"]), len(summary["skipped"]),
+        len(summary["shadow"]), dry_run,
     )
     return summary
 
 
 async def _cli() -> None:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+    # httpx logs full request URLs at INFO — Finnhub/Alpha Vantage put the API
+    # key in the query string, and Actions logs are public on a public repo.
+    logging.getLogger("httpx").setLevel(logging.WARNING)
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument(
         "--dry-run", action="store_true", help="screen + gate + log only; no writes/orders"
