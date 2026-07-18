@@ -222,15 +222,13 @@ function TechnicalsTab({
       : null;
 
   return (
-    <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
-      <div className="min-w-0 space-y-6">
-        <IndicatorTable ticker={symbol} />
-      </div>
-      <aside className="space-y-6">
+    <div className="space-y-6">
+      <div className="grid gap-6 lg:grid-cols-2">
         {rating && <TechnicalsGauge rating={rating} />}
         <AnalystGauge ticker={symbol} />
-        <KeyLevelsPanel keyLevels={verdict.key_levels} />
-      </aside>
+      </div>
+      <IndicatorTable ticker={symbol} />
+      <KeyLevelsPanel keyLevels={verdict.key_levels} />
     </div>
   );
 }

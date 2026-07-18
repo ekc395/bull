@@ -1,4 +1,4 @@
-// RSI, MACD, SMAs, EMAs, ATR, volume with brief interpretations.
+// RSI, MACD, SMAs, EMAs, ATR, volume grouped into cards with Buy/Sell/Neutral pills.
 "use client";
 
 import { cn } from "@/lib/utils";
@@ -17,32 +17,19 @@ export function IndicatorTable({ ticker }: { ticker: string }) {
 
   const ind = prices.data.indicators;
   const price = prices.data.current_price;
-  const rows = buildRows(ind, price);
 
+  // Left column (3 + 2 rows) matches the right column (5 rows) so the
+  // two columns end at the same height.
   return (
-    <div className="overflow-hidden rounded-md border border-border bg-panel">
-      <table className="w-full text-sm">
-        <thead className="border-b border-border text-[11px] uppercase tracking-wide text-muted">
-          <tr>
-            <th className="px-4 py-2 text-left font-medium">Indicator</th>
-            <th className="px-4 py-2 text-right font-medium">Value</th>
-            <th className="px-4 py-2 text-left font-medium">Signal</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((r) => (
-            <tr key={r.label} className="border-b border-border last:border-0">
-              <td className="px-4 py-2 font-medium text-primary">{r.label}</td>
-              <td className="px-4 py-2 text-right font-mono text-primary">
-                {r.value}
-              </td>
-              <td className={cn("px-4 py-2 text-xs", toneClass(r.tone))}>
-                {r.note}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+    <div className="grid gap-6 lg:grid-cols-2">
+      <div className="space-y-6">
+        <GroupCard title="Oscillators" rows={oscillatorRows(ind)} />
+        <GroupCard
+          title="Volatility & volume"
+          rows={volatilityVolumeRows(ind, price)}
+        />
+      </div>
+      <GroupCard title="Moving averages" rows={movingAverageRows(ind, price)} />
     </div>
   );
 }
@@ -53,13 +40,56 @@ interface Row {
   label: string;
   value: string;
   note: string;
-  tone: Tone;
+  // bull/bear/neutral render a Buy/Sell/Neutral pill; null is informational.
+  signal: Tone | null;
 }
 
-function toneClass(t: Tone) {
-  if (t === "bull") return "text-bull";
-  if (t === "bear") return "text-bear";
-  return "text-muted";
+function GroupCard({ title, rows }: { title: string; rows: Row[] }) {
+  return (
+    <div className="overflow-hidden rounded-md border border-border bg-panel">
+      <h3 className="border-b border-border px-4 py-2 text-[11px] font-semibold uppercase tracking-wide text-muted">
+        {title}
+      </h3>
+      {rows.map((r) => (
+        <div
+          key={r.label}
+          className="flex items-center gap-3 border-b border-border px-4 py-2 last:border-0"
+        >
+          <span className="flex-1 truncate text-sm font-medium text-primary">
+            {r.label}
+          </span>
+          {r.note && (
+            <span className="hidden text-xs text-muted sm:inline">{r.note}</span>
+          )}
+          <span className="font-mono text-sm text-primary">{r.value}</span>
+          <SignalPill signal={r.signal} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function SignalPill({ signal }: { signal: Tone | null }) {
+  if (signal == null) {
+    return (
+      <span className="inline-flex min-w-[3.75rem] justify-center text-xs text-muted">
+        —
+      </span>
+    );
+  }
+  const text = signal === "bull" ? "Buy" : signal === "bear" ? "Sell" : "Neutral";
+  return (
+    <span
+      className={cn(
+        "inline-flex min-w-[3.75rem] justify-center rounded-full px-2 py-0.5 text-[11px] font-medium",
+        signal === "bull" && "bg-bull/10 text-bull",
+        signal === "bear" && "bg-bear/10 text-bear",
+        signal === "neutral" && "bg-elevated text-secondary",
+      )}
+    >
+      {text}
+    </span>
+  );
 }
 
 function fmt(n: number | null, digits = 2) {
@@ -70,7 +100,7 @@ function fmtInt(n: number | null) {
   return n == null ? "—" : Math.round(n).toLocaleString();
 }
 
-function buildRows(ind: Indicators, price: number): Row[] {
+function oscillatorRows(ind: Indicators): Row[] {
   const rows: Row[] = [];
 
   rows.push({
@@ -83,10 +113,10 @@ function buildRows(ind: Indicators, price: number): Row[] {
           ? "Overbought"
           : ind.rsi_14 <= 30
             ? "Oversold"
-            : "Neutral",
-    tone:
+            : "",
+    signal:
       ind.rsi_14 == null
-        ? "neutral"
+        ? null
         : ind.rsi_14 >= 70
           ? "bear"
           : ind.rsi_14 <= 30
@@ -98,18 +128,13 @@ function buildRows(ind: Indicators, price: number): Row[] {
     ind.macd == null || ind.macd_signal == null
       ? null
       : ind.macd > ind.macd_signal
-        ? "bull"
-        : "bear";
+        ? ("bull" as const)
+        : ("bear" as const);
   rows.push({
     label: "MACD",
-    value: `${fmt(ind.macd, 3)} / sig ${fmt(ind.macd_signal, 3)}`,
-    note:
-      macdSignal == null
-        ? "n/a"
-        : macdSignal === "bull"
-          ? "MACD above signal"
-          : "MACD below signal",
-    tone: macdSignal ?? "neutral",
+    value: fmt(ind.macd, 3),
+    note: macdSignal == null ? "n/a" : `vs signal ${fmt(ind.macd_signal, 3)}`,
+    signal: macdSignal,
   });
   rows.push({
     label: "MACD histogram",
@@ -120,46 +145,46 @@ function buildRows(ind: Indicators, price: number): Row[] {
         : ind.macd_hist > 0
           ? "Positive momentum"
           : "Negative momentum",
-    tone:
-      ind.macd_hist == null
-        ? "neutral"
-        : ind.macd_hist > 0
-          ? "bull"
-          : "bear",
+    signal: ind.macd_hist == null ? null : ind.macd_hist > 0 ? "bull" : "bear",
   });
+
+  return rows;
+}
+
+function movingAverageRows(ind: Indicators, price: number): Row[] {
+  const rows: Row[] = [];
 
   for (const [label, value] of [
     ["SMA 20", ind.sma_20],
     ["SMA 50", ind.sma_50],
     ["SMA 200", ind.sma_200],
   ] as const) {
-    const tone: Tone =
-      value == null ? "neutral" : price > value ? "bull" : "bear";
     rows.push({
       label,
       value: fmt(value),
-      note:
-        value == null
-          ? "n/a"
-          : price > value
-            ? `Price above (${pctDelta(price, value)})`
-            : `Price below (${pctDelta(price, value)})`,
-      tone,
+      note: value == null ? "n/a" : `Price ${pctDelta(price, value)}`,
+      signal: value == null ? null : price > value ? "bull" : "bear",
     });
   }
 
   rows.push({
     label: "EMA 12",
     value: fmt(ind.ema_12),
-    note: ind.ema_12 == null ? "n/a" : pctDelta(price, ind.ema_12),
-    tone: "neutral",
+    note: ind.ema_12 == null ? "n/a" : `Price ${pctDelta(price, ind.ema_12)}`,
+    signal: null,
   });
   rows.push({
     label: "EMA 26",
     value: fmt(ind.ema_26),
-    note: ind.ema_26 == null ? "n/a" : pctDelta(price, ind.ema_26),
-    tone: "neutral",
+    note: ind.ema_26 == null ? "n/a" : `Price ${pctDelta(price, ind.ema_26)}`,
+    signal: null,
   });
+
+  return rows;
+}
+
+function volatilityVolumeRows(ind: Indicators, price: number): Row[] {
+  const rows: Row[] = [];
 
   rows.push({
     label: "ATR (14)",
@@ -168,7 +193,7 @@ function buildRows(ind: Indicators, price: number): Row[] {
       ind.atr_14 == null || price === 0
         ? "n/a"
         : `${((ind.atr_14 / price) * 100).toFixed(2)}% of price`,
-    tone: "neutral",
+    signal: null,
   });
 
   const volRatio =
@@ -178,23 +203,17 @@ function buildRows(ind: Indicators, price: number): Row[] {
       ? null
       : ind.volume_current / ind.volume_20d_avg;
   rows.push({
-    label: "Volume (today)",
+    label: "Volume",
     value: fmtInt(ind.volume_current),
     note: volRatio == null ? "n/a" : `${volRatio.toFixed(2)}× 20-day avg`,
-    tone:
+    signal:
       volRatio == null
-        ? "neutral"
+        ? null
         : volRatio >= 1.5
           ? "bull"
           : volRatio <= 0.5
             ? "bear"
-            : "neutral",
-  });
-  rows.push({
-    label: "Volume (20d avg)",
-    value: fmtInt(ind.volume_20d_avg),
-    note: "",
-    tone: "neutral",
+            : null,
   });
 
   return rows;
